@@ -1,5 +1,5 @@
 NROD Funnel
------------
+===========
 
 My attempt at making use of the Network Rail Open Data feeds https://datafeeds.networkrail.co.uk/
 
@@ -22,18 +22,25 @@ You need a config.js file that looks something like this:
 
 	module.exports = config
 
-Setup
-----
+Setup 
+-----
 
-Then, run the installer to initialise your database with reference and schedule data:
+You'll need to download the [Train Planning Data file](http://nrodwiki.rockshore.net/images/1/14/20140116_ReferenceData.gz) and stick it 
+in the same directory as the installer, with that filename (20140116_ReferenceData.gz).  If a new one is published, you'll either need 
+to rename it to the old name, or edit installer.js.
+
+Run the installer to initialise your database with reference and schedule data:
 
 	node install.js
 
-This will take a while, as it streams a gzipped file off Amazon S3 and inserts the records into your DB
+This will take a while, as it streams a gzipped file off Amazon S3 and inserts the records into your DB.  This is all the static 
+[Reference Data](http://nrodwiki.rockshore.net/index.php/Reference_data) as well as the last full export of the SCHEDULE feed.
 
 And set up a cron job to updte the SCHEDULE feed once a day at about 0430 (to be safe)
 
 	30 4 * * * node /home/chris/trainmon/update.js
+
+This will get a daily "changes" export of the SCHEDULE feed and apply it to your DB. 
 
 Running
 -------
