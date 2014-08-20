@@ -137,24 +137,13 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 								}
 							// debug('processC_MSG', record)
 							var trains = db.collection('TRAINS')
-							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, record) {
-								debug('Train update',record)
+							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
+								debug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
 							})
-							//if (
-							//	record.lastSeen.location.northing > 536000 && 
-							//	record.lastSeen.location.northing < 539000 &&
-							//	record.lastSeen.location.easting > 175600 && 
-							//	record.lastSeen.location.easting < 178000
-							//	)
-							//	{
-
-									
-									debug('trainNearLewisham', record)
-									//console.log("TRAIN NEAR LEWISHAM!!!")
-									//console.log('\u0007\u0007');
 									if ((record['lastSeen']['location']['TIPLOC'] == "LEWISHM" &&
 										(record['lastSeen']['berth']['EVENT'] == "B" || record['lastSeen']['berth']['EVENT'] == "C")))
 									{
+										// debug('trainNearLewisham', record)
 										console.log()
 										console.log(chalk.red("Train going past flat!"))
 										console.log("\u0007")
@@ -192,12 +181,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	
 	function movements_message_callback(body, headers)
 	{
-		//console.log('Message Callback Fired!');
-		//console.log('Headers: ' + sys.inspect(headers));
 		messages = JSON.parse(body)
-		//console.log("Movement Messages:")
 		messages.forEach(function (message) {
-			//console.log("Message")
 			switch(message['header']['msg_type'])
 			{
 				case '0001':
@@ -215,21 +200,20 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					console.error("Unidentified train")
 					break;
 				case '0005':
-					console.log("Train Reinstatement")
+					//console.log("Train Reinstatement")
 					movements_reinstatement(message['body'], message['header'])
 					break;
 				case '0006':
-					console.log("Change of Origin")
+					//console.log("Change of Origin")
 					movements_coo(message['body'], message['header'])
 					break;
 				case '0007':
-					console.log("Change of Identity")
+					//console.log("Change of Identity")
 					movements_coi(message['body'], message['header'])
 					break;
 				default:
 					console.error("Unknown Movement message")
 			}
-			//console.log(item)
 		})
 	}
 	
@@ -257,7 +241,9 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		var trainDescr = body.train_id.substring(2,6)
 		var schedule = db.collection('SCHEDULE')
 		schedule.findOne({
-			'CIF_train_uid': body.train_uid
+			'CIF_train_uid': body.train_uid,
+			"schedule_end_date": body.schedule_end_date,
+			"schedule_start_date": body.schedule_start_date
 		}, function (error, record) 
 		{
 			var scheduleActive = false
@@ -274,9 +260,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					'scheduleActive': scheduleActive
 				}
 			}
-			debug("TRUST activation", trainDescr + " TRUST ID (" + body.train_id + ")")
 			trains.update({'descr': trainDescr} , record, {upsert: true}, function (error, record) {
-				debug('trainUpdate', error, record)
+				debug('TRUST activation', body.train_id, error, record)
 			})
 		})
 	}
@@ -289,9 +274,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				'lastMovement': body
 			}
 		}
-		debug("Train cancellation: TRUST ID " + body.train_id)
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('trainUpdate',error, record)
+			debug('TRUST cancellation',body.train_id, error, record)
 		})
 	}
 	
@@ -304,7 +288,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('trainUpdate',error, record)
+			debug('TRUST reinstatement ',body.train_id,error, record)
 		})
 	}
 
@@ -317,7 +301,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('trainUpdate',error, record)
+			debug('TRUST Change of Origin', body.train_id, error, record)
 		})
 	}
 	
@@ -330,7 +314,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('trainUpdate',error, record)
+			debug('TRUST Change of Identity', body.train_id, error, record)
 		})
 	}
 
