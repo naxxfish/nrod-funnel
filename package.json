@@ -10,7 +10,7 @@
     "mongodb": "*",
     "mongoose": "^3.8.14",
     "readline": "0.0.3",
-    "stomp": "*",
+    "stomp-client": "*",
     "zlib": "*",
     "chalk": "*",
     "request": "*",

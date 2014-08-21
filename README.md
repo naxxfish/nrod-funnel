@@ -100,6 +100,7 @@ It seems that sometimes node-stomp dies if it gets a "funny" set of headers:
 		at Socket.Readable.push (_stream_readable.js:127:10)
 		at TCP.onread (net.js:528:21)
 
+Resolved by using [stomp-client](https://www.npmjs.org/package/stomp-client) instead
 
 Which needs to be fixed upstream.  Shame, because it means you have to restart the client, and pretty quick or you might miss a TRUST 
 activation!  

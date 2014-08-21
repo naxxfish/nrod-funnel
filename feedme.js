@@ -3,33 +3,17 @@
 var config = require('./config')
 var debug = require('debug')('trainmon-main')
 var sys = require('util');
-var stomp = require('stomp');
+var stomp = require('stomp-client');
 var JSONStream = require('JSONStream')
 var chalk = require('chalk');
 
 var MongoClient = require('mongodb').MongoClient;
 
-debug('main',config.securityToken)
-
 var numMessages = 0;
 
 var sys = require('util');
 
-// 'activemq.prefetchSize' is optional.
-// Specified number will 'fetch' that many messages
-// and dump it to the client.
-var tdHeaders = {
-    destination: '/topic/' + config.tdChannel,
-    ack: 'client'
-//    'activemq.prefetchSize': '10'
-};
-
-var movementHeaders = {
-	destination: '/topic/' + config.movementChannel,
-	ack: 'client'
-};
-
-var messages = 0;
+var numMessages = 0;
 var MongoClient = require('mongodb').MongoClient;
 
 debug('main',config.securityToken)
@@ -41,26 +25,31 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		console.log("Error connecting to DB: " + err)
 		return
 	}
-	var stomp = require('stomp');
 
-	// Set debug to true for more verbose output.
-	// login and passcode are optional (required by rabbitMQ)
-	var stomp_args = {
-		port: config.stompPort,
-		host: config.stompHost,
-		debug: false,
-		login: config.username,
-		passcode: config.password,
-	};
-	debug('main',config)
+	var client = new stomp(config.stompHost, config.stompPort, config.username, config.password);
 
-	var client = new stomp.Stomp(stomp_args);
+	client.on('error', function(error_frame) {
+		console.log(error_frame.body);
+		client.disconnect();
+	});
 
-	client.connect();
+	process.on('SIGINT', function() {
+		console.log('\nConsumed ' + numMessages + ' messages');
+		client.disconnect();
+		process.exit();
+	});
+
+	client.connect(function (sessionId) {
+		debug('client.on.connected')
+		client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
+		client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
+		console.log(chalk.yellow('Connected session' + sessionId))
+	});
 
 	function td_message_callback(body, headers) {
 		//console.log('Message Callback Fired!');
 		//console.log('Headers: ' + sys.inspect(headers));
+		numMessages++
 		messages = JSON.parse(body)
 		//debug('message_callback',messages)
 		for (var i=0;i<messages.length;i++)
@@ -140,6 +129,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
 								debug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
 							})
+									try {
 									if ((record['lastSeen']['location']['TIPLOC'] == "LEWISHM" &&
 										(record['lastSeen']['berth']['EVENT'] == "B" || record['lastSeen']['berth']['EVENT'] == "C")))
 									{
@@ -169,6 +159,10 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 												console.log("Unknown event!")
 										}
 									}
+									} catch (e)
+									{
+										console.error(e)
+									}
 								//}
 						})	
 					} else {
@@ -181,6 +175,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	
 	function movements_message_callback(body, headers)
 	{
+		numMessages++
 		messages = JSON.parse(body)
 		messages.forEach(function (message) {
 			switch(message['header']['msg_type'])
@@ -319,30 +314,5 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	}
 
 	
-	client.on('connected', function() {
-		debug('client.on.connected')
-		client.subscribe(tdHeaders, td_message_callback);
-		client.subscribe(movementHeaders, movements_message_callback);
-		console.log(chalk.yellow('Connected'))
-	});
-
-	client.on('message', function(message) {
-		//console.log("HEADERS: " + sys.inspect(message.headers));
-		//console.log("BODY: " + message.body);
-		//console.log("Got message: " + message.headers['message-id']);
-		client.ack(message.headers['message-id']);
-		numMessages++;
-	});
-
-	client.on('error', function(error_frame) {
-		console.log(error_frame.body);
-		client.disconnect();
-	});
-	process.on('SIGINT', function() {
-		console.log('\nConsumed ' + numMessages + ' messages');
-		client.disconnect();
-		process.exit();
-	});
-
 })
 
