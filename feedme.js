@@ -32,7 +32,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	});
 
 	process.on('SIGINT', function() {
-		console.log('\nConsumed ' + numMessages + ' messages');
+		console.log(chalk.green('\nConsumed ' + numMessages + ' message batches, TD messages: ' + numTDMessages + ', TRUST messages: ' + numTRUSTMessages));
 		client.disconnect();
 		process.exit();
 	});
