@@ -9,6 +9,8 @@ var chalk = require('chalk');
 var MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
+var numTDMessages = 0;
+var numTRUSTMessages = 0;
 
 var MongoClient = require('mongodb').MongoClient;
 
@@ -49,9 +51,9 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	function td_message_callback(body, headers) {
 		numMessages++
 		messages = JSON.parse(body)
-		for (var i=0;i<messages.length;i++)
+		messages.forEach(function (message)
 		{
-			message = messages[i]
+			numTDMessages++
 			switch (Object.keys(message)[0])
 			{
 				case 'CA_MSG':
@@ -82,7 +84,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				default:
 					console.log("unknown message: " + message[0])	
 			}
-		}
+		});
 	}
 
 	function processC_MSG(message)
@@ -128,6 +130,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		numMessages++
 		messages = JSON.parse(body)
 		messages.forEach(function (message) {
+			numTRUSTMessages++
 			switch(message['header']['msg_type'])
 			{
 				case '0001':
