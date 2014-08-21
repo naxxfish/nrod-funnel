@@ -92,11 +92,11 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					break;
 				case 'CC_MSG':
 					// Berth Interpose
-					//processC_MSG('CC',message.CC_MSG)
+					processC_MSG('CC',message.CC_MSG)
 					break;
 				case 'CT_MSG':
 					// Heartbeat
-					//processC_MSG('CT',message.CT_MSG)
+					processC_MSG('CT',message.CT_MSG)
 					break;				
 				case 'SF_MSG':
 					// Signalling Update
