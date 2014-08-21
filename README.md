@@ -82,25 +82,4 @@ At the moment, only C-Class messages are processed for the TD feed.  As far as I
 let you know the state of signals? No official documentation of course, though).  Some effort has been put into decoding them on the 
 [ORD google group](https://groups.google.com/forum/#!topic/openraildata-talk/Y1_5Bu6sb1w)
 
-It seems that sometimes node-stomp dies if it gets a "funny" set of headers:
-
-	/home/chris/trainmon/node_modules/stomp/lib/stomp.js:54
-			headers[header[0].trim()] = header[1].trim();
-												  ^
-	TypeError: Cannot call method 'trim' of undefined
-		at parse_headers (/home/chris/trainmon/node_modules/stomp/lib/stomp.js:54:47)
-		at parse_frame (/home/chris/trainmon/node_modules/stomp/lib/stomp.js:76:15)
-		at Socket.<anonymous> (/home/chris/trainmon/node_modules/stomp/lib/stomp.js:160:28)
-		at Socket.EventEmitter.emit (events.js:95:17)
-		at Socket.<anonymous> (_stream_readable.js:746:14)
-		at Socket.EventEmitter.emit (events.js:92:17)
-		at emitReadable_ (_stream_readable.js:408:10)
-		at emitReadable (_stream_readable.js:404:5)
-		at readableAddChunk (_stream_readable.js:165:9)
-		at Socket.Readable.push (_stream_readable.js:127:10)
-		at TCP.onread (net.js:528:21)
-
-Resolved by using [stomp-client](https://www.npmjs.org/package/stomp-client) instead
-
-Which needs to be fixed upstream.  Shame, because it means you have to restart the client, and pretty quick or you might miss a TRUST 
-activation!  
+At the moment there's no REST API for getting at the data - you currently need to query the DB directly yourself
