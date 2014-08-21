@@ -41,7 +41,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		debug('client.on.connected')
 		setInterval(function ()
 		{
-			console.log(chalk.green("Processed " + numMessages + " messages"))
+			console.log(chalk.yellow('Consumed ' + numMessages + ' message batches, TD messages: ' + numTDMessages + ', TRUST messages: ' + numTRUSTMessages));
 		}, 5000)
 		client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
 		client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
