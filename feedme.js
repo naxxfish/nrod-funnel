@@ -2,6 +2,8 @@
 
 var config = require('./config')
 var debug = require('debug')('trainmon-main')
+var tdDebug = require('debug')('trainmon-td')
+var TRUSTDebug = require('debug')('trainmon-trust')
 var sys = require('util');
 var stomp = require('stomp-client');
 var chalk = require('chalk');
@@ -82,19 +84,19 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			{
 				case 'CA_MSG':
 					// Berth Step
-					processC_MSG(message.CA_MSG)
+					processC_MSG('CA',message.CA_MSG)
 					break;
 				case 'CB_MSG':
 					// Berth Cancel
-					processC_MSG(message.CB_MSG)
+					processC_MSG('CB',message.CB_MSG)
 					break;
 				case 'CC_MSG':
 					// Berth Interpose
-					//processC_MSG(message.CC_MSG)
+					//processC_MSG('CC',message.CC_MSG)
 					break;
 				case 'CT_MSG':
 					// Heartbeat
-					//processC_MSG(message.CT_MSG)
+					//processC_MSG('CT',message.CT_MSG)
 					break;				
 				case 'SF_MSG':
 					// Signalling Update
@@ -111,12 +113,34 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		});
 	}
 
-	function processC_MSG(message)
+	function processC_MSG(msgType, message)
 	{
 		//debug('processCA_MSG', message)
 		
 		var smart = db.collection('SMART')
 		var corpus = db.collection('CORPUS')
+		var berths = db.collection('BERTHS')
+		// Berth tracking
+		switch(msgType)
+		{
+			case "CA":
+				berths.update({'berth': message.to}, {$push: {'describers': message.descr}}, {upsert:true}, function (err, update) {
+					tdDebug('Moved IN ' + message.descr + ' into berth ' + message.to)
+				})
+				berths.update({'berth': message.from}, {$pull: {'describers': message.descr}}, function (err,update) {
+					tdDebug('Moved OUT ' + message.descr + ' from berth ' + message.from)
+				})
+				break;
+			case "CB":
+				berths.update({'berth': message.from}, {$pull: {'describers': message.descr}}, function (err,update) {
+					tdDebug('Cancelled ' + message.descr + ' from berth ' + message.from)
+				})
+				break;
+			case "CC":
+				berths.update({'berth': message.to}, {$set: {'describers': [ message.descr ]}}, {upsert:true}, function (err,update) {
+					tdDebug('Interposed ' + message.descr + ' into berth ' + message.to)
+				})
+		}
 		smart.findOne({'FROMBERTH': message.from, 'TOBERTH': message.to, 'STEPTYPE': 'B'}, function (err, berth) {
 			if (berth != null)
 			{
