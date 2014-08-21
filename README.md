@@ -78,8 +78,7 @@ The NROD wiki is *the* reference for what on earth all this stuff means, as well
 Current Limitations
 -------------------
 
-At the moment, only C-Class messages are processed for the TD feed.  As far as I know S-Class isn't awfully useful (apparently it might 
-let you know the state of signals? No official documentation of course, though).  Some effort has been put into decoding them on the 
-[ORD google group](https://groups.google.com/forum/#!topic/openraildata-talk/Y1_5Bu6sb1w)
+S Class messages are now being logged, however not decoded.  The state of each TD is kept in SIGNALS collection.  Some effort has been put into decoding them on the 
+[ORD google group](https://groups.google.com/forum/#!topic/openraildata-talk/Y1_5Bu6sb1w), but none of this is implemented at the moment. 
 
 At the moment there's no REST API for getting at the data - you currently need to query the DB directly yourself

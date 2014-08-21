@@ -3,12 +3,13 @@
 var config = require('./config')
 var debug = require('debug')('trainmon-main')
 var tdDebug = require('debug')('trainmon-td')
+var tdSDebug = require('debug')('trainmon-tds')
 var TRUSTDebug = require('debug')('trainmon-trust')
 var sys = require('util');
 var stomp = require('stomp-client');
 var chalk = require('chalk');
 var moment = require('moment')
-
+var tdLookup = require('./tdlookup')
 var MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
@@ -100,6 +101,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					break;				
 				case 'SF_MSG':
 					// Signalling Update
+					processS_MSG('SF',message.SF_MSG)
 					break;
 				case 'SG_MSG':
 					// Signalling Refresh
@@ -111,6 +113,34 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					console.log("unknown message: " + message[0])	
 			}
 		});
+	}
+
+	function processS_MSG(msgType, message)
+	{
+		var signals = db.collection('SIGNALS')
+		switch(msgType)
+		{
+			case 'SF':
+				var dp = {
+					'area.id': message.area_id,
+					'area.name': tdLookup[message.area_id]
+				}
+				dp['memory.'+message.address] = message.data
+				signals.update({'area.id': message.area_id}, 
+				{$set: dp }, 
+				{upsert:true},function (err, update) {
+					tdSDebug('S Class', 'SF Update ' + message.address + '(area ' + message.area_id + ') to ' + message.data)
+				})
+				break;
+			case 'SG':
+				// err, dunno
+				break;
+			case 'SH':
+				// errr, dunoo?
+				break;
+			default:
+				tdSDebug('S Class', 'Unknown')
+		}
 	}
 
 	function processC_MSG(msgType, message)
