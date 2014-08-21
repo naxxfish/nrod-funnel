@@ -5,15 +5,20 @@ var debug = require('debug')('trainmon-main')
 var sys = require('util');
 var stomp = require('stomp-client');
 var chalk = require('chalk');
+var moment = require('moment')
 
 var MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
+var numMessagesSinceLast = 0;
 var numTDMessages = 0;
 var numTRUSTMessages = 0;
+var numTDMessagesSinceLast = 0;
+var numTRUSTMessagesSinceLast = 0;
 
 var MongoClient = require('mongodb').MongoClient;
-
+var lastUpdateTime = moment()
+var updateI = 0
 debug('main',config.securityToken)
 
 MongoClient.connect(config.mongo.connectionString, function (err, db) 
@@ -41,19 +46,38 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		debug('client.on.connected')
 		setInterval(function ()
 		{
-			console.log(chalk.yellow('Consumed ' + numMessages + ' message batches, TD messages: ' + numTDMessages + ', TRUST messages: ' + numTRUSTMessages));
+			var timeSinceLast = (moment().diff(lastUpdateTime))/1000
+			lastUpdateTime = moment()
+			if (updateI % 10 == 0)
+			{
+				// print headers
+				console.log('Batches (total/per sec)\tTD (total /per sec)\tTRUST (total/per sec)');
+			}
+			console.log(numMessages + '/' +
+				Math.round(numMessagesSinceLast / timeSinceLast) + '\t\t\t' + 
+				numTDMessages + '/' +
+				Math.round(numTDMessagesSinceLast / timeSinceLast) + '\t\t\t' + 
+				numTRUSTMessages + '/' + 
+				Math.round(numTRUSTMessagesSinceLast / timeSinceLast));
+			updateI++
+			numTRUSTMessagesSinceLast = 0
+			numTDMessagesSinceLast = 0
+			numMessagesSinceLast = 0
+
 		}, 5000)
 		client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
 		client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
-		console.log(chalk.yellow('Connected session' + sessionId))
+		console.log(chalk.yellow('Connected session ' + sessionId))
 	});
 
 	function td_message_callback(body, headers) {
 		numMessages++
+		numMessagesSinceLast++
 		messages = JSON.parse(body)
 		messages.forEach(function (message)
 		{
 			numTDMessages++
+			numTDMessagesSinceLast++
 			switch (Object.keys(message)[0])
 			{
 				case 'CA_MSG':
@@ -128,9 +152,11 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	function movements_message_callback(body, headers)
 	{
 		numMessages++
+		numMessagesSinceLast++
 		messages = JSON.parse(body)
 		messages.forEach(function (message) {
 			numTRUSTMessages++
+			numTRUSTMessagesSinceLast++
 			switch(message['header']['msg_type'])
 			{
 				case '0001':
