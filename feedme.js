@@ -4,16 +4,12 @@ var config = require('./config')
 var debug = require('debug')('trainmon-main')
 var sys = require('util');
 var stomp = require('stomp-client');
-var JSONStream = require('JSONStream')
 var chalk = require('chalk');
 
 var MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
 
-var sys = require('util');
-
-var numMessages = 0;
 var MongoClient = require('mongodb').MongoClient;
 
 debug('main',config.securityToken)
@@ -41,56 +37,50 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 
 	client.connect(function (sessionId) {
 		debug('client.on.connected')
+		setInterval(function ()
+		{
+			console.log(chalk.green("Processed " + numMessages + " messages"))
+		}, 5000)
 		client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
 		client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
 		console.log(chalk.yellow('Connected session' + sessionId))
 	});
 
 	function td_message_callback(body, headers) {
-		//console.log('Message Callback Fired!');
-		//console.log('Headers: ' + sys.inspect(headers));
 		numMessages++
 		messages = JSON.parse(body)
-		//debug('message_callback',messages)
 		for (var i=0;i<messages.length;i++)
 		{
 			message = messages[i]
-			// debug('switchmessage',message)
 			switch (Object.keys(message)[0])
 			{
 				case 'CA_MSG':
-					//console.log("Got CA message!")
+					// Berth Step
 					processC_MSG(message.CA_MSG)
 					break;
 				case 'CB_MSG':
-					//console.log("Got CB message!")
+					// Berth Cancel
 					processC_MSG(message.CB_MSG)
 					break;
 				case 'CC_MSG':
-					//console.log("Got CC message!")
+					// Berth Interpose
 					//processC_MSG(message.CC_MSG)
 					break;
 				case 'CT_MSG':
-					//console.log("Got CT message!")
+					// Heartbeat
 					//processC_MSG(message.CT_MSG)
 					break;				
 				case 'SF_MSG':
-					//console.log("Got SF message!")
-					//processCA_MSG(message)
-					//processCA_MSG(message)
+					// Signalling Update
 					break;
 				case 'SG_MSG':
-					//console.log("Got SG message!")
-					//processCA_MSG(message)
+					// Signalling Refresh
 					break;
 				case 'SH_MSG':
-					//console.log("Got SH message!")
-					//processCA_MSG(message)
+					// Signalling Refresh Finished	
 					break;
-
-					default:
-					console.log("unknown message: " + message[0])
-					
+				default:
+					console.log("unknown message: " + message[0])	
 			}
 		}
 	}
@@ -101,16 +91,12 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		
 		var smart = db.collection('SMART')
 		var corpus = db.collection('CORPUS')
-		// debug('processC_MSG', smart)
-		//debug('processC_MSG',{'FROMBERTH': message.from, 'TOBERTH': message.to})
 		smart.findOne({'FROMBERTH': message.from, 'TOBERTH': message.to, 'STEPTYPE': 'B'}, function (err, berth) {
-			//debug('processC_MSG.matchingBerths',berth)
 			if (berth != null)
 			{
 				corpus.findOne({'STANOX': berth.STANOX}, function (err, stanox) {
 					if (stanox != null) 
 					{
-						//debug('processC_MSG.matchingStanox', stanox)
 						var reference = db.collection('REFERENCE')
 						reference.findOne({'TIPLOC': stanox.TIPLOC, 'refType': 'GeographicData'}, function (err, location)
 						{
@@ -124,46 +110,10 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 										'location': location
 									}
 								}
-							// debug('processC_MSG', record)
 							var trains = db.collection('TRAINS')
 							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
 								debug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
 							})
-									try {
-									if ((record['lastSeen']['location']['TIPLOC'] == "LEWISHM" &&
-										(record['lastSeen']['berth']['EVENT'] == "B" || record['lastSeen']['berth']['EVENT'] == "C")))
-									{
-										// debug('trainNearLewisham', record)
-										console.log()
-										console.log(chalk.red("Train going past flat!"))
-										console.log("\u0007")
-										console.log("Train " + record['descr'] + " has moved from berth " + record['lastSeen']['berth']['FROMBERTH'] + " to berth " + record['lastSeen']['berth']['TOBERTH'])
-										console.log("At " + record['lastSeen']['location']['locationName'] + " platform " + record['lastSeen']['berth']['PLATFORM'])
-										console.log("SMART Berth detail: " + JSON.stringify(record['lastSeen']['berth'],{}, true))
-										console.log("CORPUS detail: " + JSON.stringify(record['lastSeen']['location'],{},true))
-										switch (record['lastSeen']['berth']['EVENT'])
-										{
-											case 'A':
-												console.log("Arrived in the 'up' directon")
-												break;
-											case 'B':
-												console.log("Departure in the 'up' direction")
-												break;
-											case 'C':
-												console.log("Arrival in the 'down' direction")
-												break;
-											case 'D':
-												console.log("Departure in the 'down' direction")
-												break;
-											default:
-												console.log("Unknown event!")
-										}
-									}
-									} catch (e)
-									{
-										console.error(e)
-									}
-								//}
 						})	
 					} else {
 						//console.log("No valid stanox!")
@@ -181,29 +131,29 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			switch(message['header']['msg_type'])
 			{
 				case '0001':
-					//console.log("Train Activation");
+					// Train Activation
 					movements_activation(message['body'], message['header'])
 					break;
 				case '0002':
-					//console.log("Train cancellation")
+					// Train cancellation
 					movements_cancellation(message['body'], message['header'])
 				case '0003':
-					//console.log("Train Movement");
+					// Train Movement
 					movements_movement(message['body'], message['header'])
 					break;
 				case '0004':
 					console.error("Unidentified train")
 					break;
 				case '0005':
-					//console.log("Train Reinstatement")
+					// Train Reinstatement
 					movements_reinstatement(message['body'], message['header'])
 					break;
 				case '0006':
-					//console.log("Change of Origin")
+					// Change of Origin
 					movements_coo(message['body'], message['header'])
 					break;
 				case '0007':
-					//console.log("Change of Identity")
+					// Change of Identity
 					movements_coi(message['body'], message['header'])
 					break;
 				default:
