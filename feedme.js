@@ -188,7 +188,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 										'berth': berth,
 										'stanox': stanox,
 										'location': location
-									}
+									},
+									'lastUpdate': moment().unix()
 								}
 							var trains = db.collection('TRAINS')
 							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
@@ -255,7 +256,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				'trustID': body.train_id,
 				'descr': trainDescr,
 				'movementActive': true,
-				'lastMovement': body
+				'lastMovement': body,
+				'lastUpdate': moment().unix()
 			}
 		}
 		trains.update({'trustID': body.train_id}, record, {upsert:true}, function () {
@@ -285,7 +287,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 					'trustID': body.train_id,
 					'movementActivation': body,
 					'schedule': record,
-					'scheduleActive': scheduleActive
+					'scheduleActive': scheduleActive,
+					'lastUpdate': moment().unix()
 				}
 			}
 			trains.update({'descr': trainDescr} , record, {upsert: true}, function (error, record) {
@@ -299,7 +302,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		var trains  = db.collection('TRAINS')	
 		var record = {
 			$set: {
-				'lastMovement': body
+				'lastMovement': body,
+				'lastUpdate': moment().unix()
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
@@ -312,7 +316,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		var trains  = db.collection('TRAINS')
 		var record = {
 			$set: {
-				'lastMovement': body
+				'lastMovement': body,
+				'lastUpdate': moment().unix()
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
@@ -325,7 +330,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		var trains  = db.collection('TRAINS')
 		var record = {
 			$set: {
-				'coo': body
+				'coo': body,
+				'lastUpdate': moment().unix()
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
@@ -338,7 +344,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		var trains  = db.collection('TRAINS')
 		var record = {
 			$set: {
-				'coi': body
+				'coi': body,
+				'lastUpdate': moment().unix()
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
