@@ -18,6 +18,15 @@ You need a config.js file that looks something like this:
 	        "mongo": {
 	                'connectionString': 'mongodb://mongouser:mongopassword@mongohost:27017/mongodbname'
 	        }
+	        "feeds": {              // feeds which are enabled
+	                'TD' : [
+	                        'C', // have this here to enable processing C class messages
+	                        'S'  // have this here to enable processing S class messages
+	                ],
+	                'TRUST': true, // enable processing TRUST messages
+	                'VSTP': true,  // enable processing VSTP messges (not implemented yet)
+	                'SCHEDULE': true // enable processing SCHEDULE feed
+	        }
 	}
 
 	module.exports = config
