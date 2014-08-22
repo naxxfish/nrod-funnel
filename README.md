@@ -8,7 +8,7 @@ This uses a MongoDB to keep track of the current state of things on the network,
 You need a config.js file that looks something like this:
 
 	var config = {
-	        "securityToken": "the security token they ask you to "display in your source code"",
+	        "securityToken": "the security token they ask you to 'display in your source code'",
 	        "stompHost": "datafeeds.networkrail.co.uk",
 	        "stompPort": 61618,
 	        "tdChannel": "TD_ALL_SIG_AREA", // find which one you want to subscribe to here http://nrodwiki.rockshore.net/index.php/TD
