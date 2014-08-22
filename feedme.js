@@ -68,8 +68,14 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			numMessagesSinceLast = 0
 
 		}, 5000)
-		client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
-		client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
+		if (config.feeds.TD != undefined)
+		{
+			client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
+		}
+		if (config.feeds.TRUST == true)
+		{
+			client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
+		}
 		console.log(chalk.yellow('Connected session ' + sessionId))
 	});
 
@@ -117,6 +123,11 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 
 	function processS_MSG(msgType, message)
 	{
+		if (config.feeds.TD.indexOf('S') == -1)
+		{
+			debug('processS_MSG', 'S class messages disabled')
+			return
+		}
 		var signals = db.collection('SIGNALS')
 		switch(msgType)
 		{
@@ -145,6 +156,11 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 
 	function processC_MSG(msgType, message)
 	{
+		if (config.feeds.TD.indexOf('C') == -1)
+		{
+			debug('processS_MSG', 'C class messages disabled')
+			return
+		}
 		//debug('processCA_MSG', message)
 		
 		var smart = db.collection('SMART')
