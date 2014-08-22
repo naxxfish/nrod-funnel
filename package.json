@@ -1,17 +1,21 @@
 {
-  "name": "trainMon",
+  "name": "nrod-funnel",
   "author": "Chris Roberts",
+  "version": "0.1.0",
+  "description": "Network Rail data aggregation into a mongoDB",
+  "repository" : 
+  {
+    "type": "git",
+    "url": "https://github.com/naxxfish/nrod-funnel"
+  },
   "dependencies": {
     "JSONStream": "git://github.com/dominictarr/JSONStream.git",
-    "csv-stream": "^0.1.3",
+    "csv-stream": "*",
     "debug": "*",
-    "dev-null": "^0.1.1",
-    "event-stream": "^3.1.7",
+    "dev-null": "*",
+    "event-stream": "*",
     "mongodb": "*",
-    "mongoose": "^3.8.14",
-    "readline": "0.0.3",
     "stomp-client": "*",
-    "zlib": "*",
     "chalk": "*",
     "request": "*",
     "express": "4.8.4",
