@@ -6,7 +6,7 @@ var fs = require('fs')
 var MongoClient = require('mongodb').MongoClient;
 var install = require('./install')
 var chalk = require('chalk')
-
+var moment = require('moment')
 MongoClient.connect('mongodb://trainmon:trainmon@localhost:27017/trainmon?w=0', function (err, db) {
 	if (err)
 	{
@@ -17,5 +17,12 @@ MongoClient.connect('mongodb://trainmon:trainmon@localhost:27017/trainmon?w=0', 
 		console.log(chalk.green("Schedule data updated!"))
 		process.exit()
 	}) // update
-
+	// clean up old trains
+	var lastWeek = moment().subtract('7','days')
+	console.log("Deleting TRAINS older than 7 days old (" + lastWeek.unix() + ")")
+	var trains = db.collection('TRAINS')
+	trains.remove({'lastUpdated':  {$lt: lastWeek.unix()}}, function (docs) {
+		console.log("Removed " + docs + " docs")
+		db.close()
+	})
 })
