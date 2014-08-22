@@ -82,3 +82,5 @@ S Class messages are now being logged, however not decoded.  The state of each T
 [ORD google group](https://groups.google.com/forum/#!topic/openraildata-talk/Y1_5Bu6sb1w), but none of this is implemented at the moment. 
 
 At the moment there's no REST API for getting at the data - you currently need to query the DB directly yourself
+
+Currently doesn't process VSTP feed.  
