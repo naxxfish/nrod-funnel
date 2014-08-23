@@ -411,7 +411,7 @@ function importSchedule(db, options , cb)
 			gzip: true,
 			followRedirect: false
 		})
-		if (options['update'])
+		if (!options['update'])
 		{
 			dataStream = dataStream.pipe(gzip)
 		}
