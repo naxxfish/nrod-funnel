@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 var config = require('./config')
+
 var debug = require('debug')('trainmon-main')
 var tdDebug = require('debug')('trainmon-td')
-var tdSDebug = require('debug')('trainmon-tds')
 var TRUSTDebug = require('debug')('trainmon-trust')
+var VSTPDebug = require('debug')('trainmon-vstp')
+
 var sys = require('util');
 var stomp = require('stomp-client');
 var chalk = require('chalk');
@@ -70,14 +72,26 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		}, 5000)
 		if (config.feeds.TD != undefined)
 		{
-			client.subscribe('/topic/' + config.tdChannel, td_message_callback) 
+			client.subscribe('/topic/' + config.tdChannel, td_message_callback)
 		}
 		if (config.feeds.TRUST == true)
 		{
 			client.subscribe('/topic/' + config.movementChannel, movements_message_callback);
 		}
+		if (config.feeds.VSTP == true)
+		{
+			client.subscribe('/topic/VSTP_ALL', vstp_message_callback)
+		}
 		console.log(chalk.yellow('Connected session ' + sessionId))
 	});
+
+	function vstp_message_callback(body, headers) {
+		numMessages++
+		numMessagesSinceLast++
+		var message = JSON.parse(body)['VSTPCIFMsgV1']
+		var schedule = message['schedule']
+		VSTPDebug('VSTPFeed',schedule, schedule['schedule_segment'])
+	}
 
 	function td_message_callback(body, headers) {
 		numMessages++
@@ -125,7 +139,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	{
 		if (config.feeds.TD.indexOf('S') == -1)
 		{
-			debug('processS_MSG', 'S class messages disabled')
+			tdDebug('processS_MSG', 'S class messages disabled')
 			return
 		}
 		var signals = db.collection('SIGNALS')
@@ -140,7 +154,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				signals.update({'area.id': message.area_id}, 
 				{$set: dp }, 
 				{upsert:true},function (err, update) {
-					tdSDebug('S Class', 'SF Update ' + message.address + '(area ' + message.area_id + ') to ' + message.data)
+					tdDebug('S Class', 'SF Update ' + message.address + '(area ' + message.area_id + ') to ' + message.data)
 				})
 				break;
 			case 'SG':
@@ -150,7 +164,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				// errr, dunoo?
 				break;
 			default:
-				tdSDebug('S Class', 'Unknown')
+				tdDebug('S Class', 'Unknown')
 		}
 	}
 
@@ -161,8 +175,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			debug('processS_MSG', 'C class messages disabled')
 			return
 		}
-		//debug('processCA_MSG', message)
-		
+		//tdDebug('processCA_MSG', message)
 		var smart = db.collection('SMART')
 		var corpus = db.collection('CORPUS')
 		var berths = db.collection('BERTHS')
@@ -191,7 +204,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			if (berth != null)
 			{
 				corpus.findOne({'STANOX': berth.STANOX}, function (err, stanox) {
-					if (stanox != null) 
+					if (stanox != null)
 					{
 						var reference = db.collection('REFERENCE')
 						reference.findOne({'TIPLOC': stanox.TIPLOC, 'refType': 'GeographicData'}, function (err, location)
@@ -209,9 +222,9 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 								}
 							var trains = db.collection('TRAINS')
 							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
-								debug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
+								tdDebug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
 							})
-						})	
+						})
 					} else {
 						//console.log("No valid stanox!")
 					}
@@ -277,7 +290,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id}, record, {upsert:true}, function () {
-			debug("TRUST movement",  body.train_id,  "STANOX (" + body.loc_stanox + ")")
+			TRUSTDebug("TRUST movement",  body.train_id,  "STANOX (" + body.loc_stanox + ")")
 		})
 	}
 		
@@ -308,7 +321,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 				}
 			}
 			trains.update({'descr': trainDescr} , record, {upsert: true}, function (error, record) {
-				debug('TRUST activation', body.train_id, error, record)
+				TRUSTDebug('TRUST activation', body.train_id, error, record)
 			})
 		})
 	}
@@ -323,7 +336,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('TRUST cancellation',body.train_id, error, record)
+			TRUSTDebug('TRUST cancellation',body.train_id, error, record)
 		})
 	}
 	
@@ -337,7 +350,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('TRUST reinstatement ',body.train_id,error, record)
+			TRUSTDebug('TRUST reinstatement ',body.train_id,error, record)
 		})
 	}
 
@@ -351,7 +364,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('TRUST Change of Origin', body.train_id, error, record)
+			TRUSTDebug('TRUST Change of Origin', body.train_id, error, record)
 		})
 	}
 	
@@ -365,7 +378,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 			}
 		}
 		trains.update({'trustID': body.train_id},record, function (error, record) {
-			debug('TRUST Change of Identity', body.train_id, error, record)
+			TRUSTDebug('TRUST Change of Identity', body.train_id, error, record)
 		})
 	}
 
