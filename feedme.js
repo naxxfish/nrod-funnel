@@ -7,6 +7,7 @@ var debug = require('debug')('nrod-main')
 var VSTPDebug = require('debug')('nrod-vstp')
 var tdParser = require('./lib/tdParser')
 var trustParser = require('./lib/trustParser')
+var vstpParser = require('./lib/vstpParser')
 
 var sys = require('util');
 var stomp = require('stomp-client');
@@ -89,9 +90,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	function vstp_message_callback(body, headers) {
 		numMessages++
 		numMessagesSinceLast++
-		var message = JSON.parse(body)['VSTPCIFMsgV1']
-		var schedule = message['schedule']
-		VSTPDebug('VSTPFeed',schedule, schedule['schedule_segment'])
+		vstpParser.parse(JSON.parse(body)['VSTPCIFMsgV1'])
 	}
 
 	function td_message_callback(body, headers) {
