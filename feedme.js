@@ -2,16 +2,17 @@
 
 var config = require('./config')
 
-var debug = require('debug')('trainmon-main')
-var tdDebug = require('debug')('trainmon-td')
-var TRUSTDebug = require('debug')('trainmon-trust')
-var VSTPDebug = require('debug')('trainmon-vstp')
+var debug = require('debug')('nrod-main')
+
+var VSTPDebug = require('debug')('nrod-vstp')
+var tdParser = require('./lib/tdParser')
+var trustParser = require('./lib/trustParser')
 
 var sys = require('util');
 var stomp = require('stomp-client');
 var chalk = require('chalk');
 var moment = require('moment')
-var tdLookup = require('./tdlookup')
+
 var MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
@@ -101,138 +102,10 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		{
 			numTDMessages++
 			numTDMessagesSinceLast++
-			switch (Object.keys(message)[0])
-			{
-				case 'CA_MSG':
-					// Berth Step
-					processC_MSG('CA',message.CA_MSG)
-					break;
-				case 'CB_MSG':
-					// Berth Cancel
-					processC_MSG('CB',message.CB_MSG)
-					break;
-				case 'CC_MSG':
-					// Berth Interpose
-					processC_MSG('CC',message.CC_MSG)
-					break;
-				case 'CT_MSG':
-					// Heartbeat
-					processC_MSG('CT',message.CT_MSG)
-					break;				
-				case 'SF_MSG':
-					// Signalling Update
-					processS_MSG('SF',message.SF_MSG)
-					break;
-				case 'SG_MSG':
-					// Signalling Refresh
-					break;
-				case 'SH_MSG':
-					// Signalling Refresh Finished	
-					break;
-				default:
-					console.log("unknown message: " + message[0])	
-			}
-		});
-	}
-
-	function processS_MSG(msgType, message)
-	{
-		if (config.feeds.TD.indexOf('S') == -1)
-		{
-			tdDebug('processS_MSG', 'S class messages disabled')
-			return
-		}
-		var signals = db.collection('SIGNALS')
-		switch(msgType)
-		{
-			case 'SF':
-				var dp = {
-					'area.id': message.area_id,
-					'area.name': tdLookup[message.area_id]
-				}
-				dp['memory.'+message.address] = message.data
-				signals.update({'area.id': message.area_id}, 
-				{$set: dp }, 
-				{upsert:true},function (err, update) {
-					tdDebug('S Class', 'SF Update ' + message.address + '(area ' + message.area_id + ') to ' + message.data)
-				})
-				break;
-			case 'SG':
-				// err, dunno
-				break;
-			case 'SH':
-				// errr, dunoo?
-				break;
-			default:
-				tdDebug('S Class', 'Unknown')
-		}
-	}
-
-	function processC_MSG(msgType, message)
-	{
-		if (config.feeds.TD.indexOf('C') == -1)
-		{
-			debug('processS_MSG', 'C class messages disabled')
-			return
-		}
-		//tdDebug('processCA_MSG', message)
-		var smart = db.collection('SMART')
-		var corpus = db.collection('CORPUS')
-		var berths = db.collection('BERTHS')
-		// Berth tracking
-		switch(msgType)
-		{
-			case "CA":
-				berths.update({'berth': message.to}, {$push: {'describers': message.descr}}, {upsert:true}, function (err, update) {
-					tdDebug('Moved IN ' + message.descr + ' into berth ' + message.to)
-				})
-				berths.update({'berth': message.from}, {$pull: {'describers': message.descr}}, function (err,update) {
-					tdDebug('Moved OUT ' + message.descr + ' from berth ' + message.from)
-				})
-				break;
-			case "CB":
-				berths.update({'berth': message.from}, {$pull: {'describers': message.descr}}, function (err,update) {
-					tdDebug('Cancelled ' + message.descr + ' from berth ' + message.from)
-				})
-				break;
-			case "CC":
-				berths.update({'berth': message.to}, {$set: {'describers': [ message.descr ]}}, {upsert:true}, function (err,update) {
-					tdDebug('Interposed ' + message.descr + ' into berth ' + message.to)
-				})
-		}
-		smart.findOne({'FROMBERTH': message.from, 'TOBERTH': message.to, 'STEPTYPE': 'B'}, function (err, berth) {
-			if (berth != null)
-			{
-				corpus.findOne({'STANOX': berth.STANOX}, function (err, stanox) {
-					if (stanox != null)
-					{
-						var reference = db.collection('REFERENCE')
-						reference.findOne({'TIPLOC': stanox.TIPLOC, 'refType': 'GeographicData'}, function (err, location)
-						{
-							var record = {
-									'currentBerth': message.to,
-									'tdActive': true,
-									'lastSeen': { 
-										'td': message, 
-										'berth': berth,
-										'stanox': stanox,
-										'location': location
-									},
-									'lastUpdate': moment().unix()
-								}
-							var trains = db.collection('TRAINS')
-							trains.update({'descr': message.descr} , {$set: record } , {upsert: true}, function (error, myRecord) {
-								tdDebug('TD Update', message.descr, record.lastSeen.td.to, record.lastSeen.td.from)
-							})
-						})
-					} else {
-						//console.log("No valid stanox!")
-					}
-				})
-			}
+			tdParser.parse(db, message)
 		})
 	}
-	
+
 	function movements_message_callback(body, headers)
 	{
 		numMessages++
@@ -241,147 +114,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		messages.forEach(function (message) {
 			numTRUSTMessages++
 			numTRUSTMessagesSinceLast++
-			switch(message['header']['msg_type'])
-			{
-				case '0001':
-					// Train Activation
-					movements_activation(message['body'], message['header'])
-					break;
-				case '0002':
-					// Train cancellation
-					movements_cancellation(message['body'], message['header'])
-				case '0003':
-					// Train Movement
-					movements_movement(message['body'], message['header'])
-					break;
-				case '0004':
-					console.error("Unidentified train")
-					break;
-				case '0005':
-					// Train Reinstatement
-					movements_reinstatement(message['body'], message['header'])
-					break;
-				case '0006':
-					// Change of Origin
-					movements_coo(message['body'], message['header'])
-					break;
-				case '0007':
-					// Change of Identity
-					movements_coi(message['body'], message['header'])
-					break;
-				default:
-					console.error("Unknown Movement message")
-			}
+			trustParser.parse(db, message)
 		})
 	}
-	
-	function movements_movement(body, header)
-	{
-		var trains  = db.collection('TRAINS')
-		var trainDescr = body.train_id.substring(2,6)
-
-		var record = {
-			$set: {
-				'trustID': body.train_id,
-				'descr': trainDescr,
-				'movementActive': true,
-				'lastMovement': body,
-				'lastUpdate': moment().unix()
-			}
-		}
-		trains.update({'trustID': body.train_id}, record, {upsert:true}, function () {
-			TRUSTDebug("TRUST movement",  body.train_id,  "STANOX (" + body.loc_stanox + ")")
-		})
-	}
-		
-	function movements_activation(body, header)
-	{
-		var trains = db.collection('TRAINS')
-		var trainDescr = body.train_id.substring(2,6)
-		var schedule = db.collection('SCHEDULE')
-		schedule.findOne({
-			'CIF_train_uid': body.train_uid,
-			"schedule_end_date": body.schedule_end_date,
-			"schedule_start_date": body.schedule_start_date
-		}, function (error, record) 
-		{
-			var scheduleActive = false
-			if (record != null)
-			{
-				scheduleActive = true
-			}
-			var record = {
-				$set: {
-					'trustActivated': true,
-					'trustID': body.train_id,
-					'movementActivation': body,
-					'schedule': record,
-					'scheduleActive': scheduleActive,
-					'lastUpdate': moment().unix()
-				}
-			}
-			trains.update({'descr': trainDescr} , record, {upsert: true}, function (error, record) {
-				TRUSTDebug('TRUST activation', body.train_id, error, record)
-			})
-		})
-	}
-	
-	function movements_cancellation (body, header) 
-	{
-		var trains  = db.collection('TRAINS')	
-		var record = {
-			$set: {
-				'lastMovement': body,
-				'lastUpdate': moment().unix()
-			}
-		}
-		trains.update({'trustID': body.train_id},record, function (error, record) {
-			TRUSTDebug('TRUST cancellation',body.train_id, error, record)
-		})
-	}
-	
-	function movements_reinstatement (body, header) 
-	{
-		var trains  = db.collection('TRAINS')
-		var record = {
-			$set: {
-				'lastMovement': body,
-				'lastUpdate': moment().unix()
-			}
-		}
-		trains.update({'trustID': body.train_id},record, function (error, record) {
-			TRUSTDebug('TRUST reinstatement ',body.train_id,error, record)
-		})
-	}
-
-	function movements_coo (body, header) 
-	{
-		var trains  = db.collection('TRAINS')
-		var record = {
-			$set: {
-				'coo': body,
-				'lastUpdate': moment().unix()
-			}
-		}
-		trains.update({'trustID': body.train_id},record, function (error, record) {
-			TRUSTDebug('TRUST Change of Origin', body.train_id, error, record)
-		})
-	}
-	
-	function movements_coi (body, header) 
-	{
-		var trains  = db.collection('TRAINS')
-		var record = {
-			$set: {
-				'coi': body,
-				'lastUpdate': moment().unix()
-			}
-		}
-		trains.update({'trustID': body.train_id},record, function (error, record) {
-			TRUSTDebug('TRUST Change of Identity', body.train_id, error, record)
-		})
-	}
-
-	
 })
 

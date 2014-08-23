@@ -92,4 +92,4 @@ S Class messages are now being logged, however not decoded.  The state of each T
 
 At the moment there's no REST API for getting at the data - you currently need to query the DB directly yourself
 
-Currently doesn't process VSTP feed.  
+Currently doesn't process VSTP feed - but does subscribe to it.
