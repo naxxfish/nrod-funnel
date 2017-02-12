@@ -7,45 +7,57 @@ var readline = require('readline')
 var zlib = require('zlib')
 var JSONStream = require('JSONStream')
 var csv = require('csv-stream')
-var es = require('event-stream') 
+var es = require('event-stream')
 var request = require('request')
 var chalk = require('chalk')
+var ftpClient = require('ftp');
+var xmlNodes = require('xml-nodes');
+var xmlObjects = require('xml-objects');
 
 // Retrieve
 var MongoClient = require('mongodb').MongoClient;
 
 function main() {
-debug('main',config.securityToken)
-MongoClient.connect(config.mongo.connectionString, function (err, db) {
-	if (err)
-	{
-		console.log("Error: " + err)
-		return
-	}
-	var referenceDataFilename = '20140116_ReferenceData.gz'
-	console.log("Initialising datasets")
-	console.log("Importing reference data from " + referenceDataFilename)
-	importReferenceData(db, referenceDataFilename , function () {
-		console.log(chalk.green("Reference Data imported"))	
-			importSMART(db, function() {
-			console.log("SMART data imported")
-			importCORPUS(db , function () {
-				console.log(chalk.green("CORPUS data imported"))
-				console.log("Importing initial (full) SCHEDULE data")
-				importSchedule(db, {update: false}, function (){
-					console.log(chalk.green("Schedule data imported!"))
-					db.close()
-					process.exit()
-				})
-			})
-		})
-	})
-})
+   debug('main',config.securityToken)
+   MongoClient.connect(config.mongo.connectionString, function (err, db) {
+   	if (err)
+   	{
+   		console.log("Error: " + err)
+   		return
+   	}
+
+   	var referenceDataFilename = '20140116_ReferenceData.gz'
+   	console.log("Initialising datasets")
+   	console.log("Importing reference data from " + referenceDataFilename)
+   	importReferenceData(db, referenceDataFilename , function () {
+   		console.log(chalk.green("Reference Data imported"))
+   			importSMART(db, function() {
+   			console.log("SMART data imported")
+   			importCORPUS(db , function () {
+   				console.log(chalk.green("CORPUS data imported"))
+   				console.log("Importing initial (full) SCHEDULE data")
+   				importSchedule(db, {update: false}, function (){
+   					console.log(chalk.green("Schedule data imported!"))
+                  importDarwinReference(db, function () {
+                     console.log(chalk.green("Darwin Reference data imported!"))
+                     importDarwinSchedule(db, function () {
+                        console.log(chalk.green("Darwin Schedule data imported!"))
+                        db.close()
+         					process.exit()
+                     })
+                  })
+   				})
+   			})
+   		})
+   	})
+   })
 }
+
 if (require.main === module)
 {
 	main()
 }
+
 function importSMART(db, cb)
 {
 	debug('importSMART')
@@ -54,11 +66,11 @@ function importSMART(db, cb)
 	var getUrl = "http://datafeeds.networkrail.co.uk/ntrod/SupportingFileAuthenticate?type=SMART"
 	request(
 	{
-		uri: getUrl, 
+		uri: getUrl,
 		method: "GET",
 		gzip: true,
 		auth: {
-			'username': config.username, 
+			'username': config.username,
 			'pass': config.password
 		},
 		followRedirect: true
@@ -71,7 +83,7 @@ function importSMART(db, cb)
 		var dataURI = response.request.uri.href
 		var dataStream = request(
 		{
-			uri: dataURI, 
+			uri: dataURI,
 			method: "GET",
 			gzip: true,
 			followRedirect: true
@@ -85,20 +97,20 @@ function importSMART(db, cb)
 		var associationItems = 0
 		var tiplocItems = 0
 		var records = 0
-		
+
 		var jstream = JSONStream.parse("BERTHDATA.*")
 		function anno ( items )
 		{
 			console.log("Written " + items + " SMART Data rows")
 		}
-		var rows = 0 
+		var rows = 0
 
 		db.collection('SMART', function (err, collection ) {
 			collection.ensureIndex({'FROMBERTH':1, 'TOBERTH':1}, {}, function () {
 				console.log("Index created")
 			 })
 			var documents = []
-			dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync(function (data) 
+			dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync(function (data)
 			{
 				rows++
 				data.type = 'SMART'
@@ -108,28 +120,28 @@ function importSMART(db, cb)
 				if (documents.length >= 500)
 				{
 					debug('insertDocuments','inserting batch of documents', documents.length)
-					collection.insert( documents , {w:1}, function (err, records) { 
+					collection.insert( documents , {w:1}, function (err, records) {
 						if (err)
 						{
 							console.error(err)
 						}
 						debug('insertDocuments', 'inserted', records.length, 'records')
-						//anno(Object.keys(records)) 
+						//anno(Object.keys(records))
 					} )
 					documents = []
 				}
 			})).on('end', function() {
-				collection.insert( documents , {w:1}, function (err, records) { 
+				collection.insert( documents , {w:1}, function (err, records) {
 					if (err)
 					{
 						console.error(err)
 					}
 					debug('insertDocumentsFinally',records.length)
-					anno(rows) 
+					anno(rows)
 					cb();
 				} )
 			})
-		})	
+		})
 	})
 }
 
@@ -142,11 +154,11 @@ function importCORPUS(db, cb)
 	var getUrl = "http://datafeeds.networkrail.co.uk/ntrod/SupportingFileAuthenticate?type=CORPUS"
 	request(
 	{
-		uri: getUrl, 
+		uri: getUrl,
 		method: "GET",
 		gzip: true,
 		auth: {
-			'username': config.username, 
+			'username': config.username,
 			'pass': config.password
 		},
 		followRedirect: true
@@ -159,8 +171,8 @@ function importCORPUS(db, cb)
 		}
 
 		db.collection('CORPUS', function (err, collection)
-		{		
-			var rows= 0 
+		{
+			var rows= 0
 			var documents = []
 			collection.ensureIndex({'STANOX':1}, {}, function() {
 				console.log("Indexed on STANOX")
@@ -209,13 +221,13 @@ function importReferenceData(db, filename, cb)
 		var options = {
 			delimiter: "\t",
 			endLine: "\n",
-			columns: 
-				['recordType', 
-				'field1', 
-				'field2', 
-				'field3', 
-				'field4', 
-				'field5', 
+			columns:
+				['recordType',
+				'field1',
+				'field2',
+				'field3',
+				'field4',
+				'field5',
 				'field6',
 				'field7',
 				'field8',
@@ -235,7 +247,7 @@ function importReferenceData(db, filename, cb)
 		}
 		var tsvStream = csv.createStream(options)
 
-		var rows= 0 
+		var rows= 0
 		var insertedRows = 0
 		var documents = []
 		tsvStream.on('data', function (data) {
@@ -341,7 +353,7 @@ function importReferenceData(db, filename, cb)
 					break;
 				default:
 					doc = {}
-			} 
+			}
 			documents.push(doc)
 			//debug('loadDocuments')
 			if (documents.length >= 1000)
@@ -368,27 +380,27 @@ function importReferenceData(db, filename, cb)
 }
 
 function importSchedule(db, options , cb)
-{	
+{
 	var d = new Date();
 	var weekday = [ "sun", "mon",  "tue", "wed", "thu",  "fri", "sat"];
 
 	var dayOfWeek = weekday[d.getDay()];
-	var gzip = zlib.createGunzip()	
+	var gzip = zlib.createGunzip()
 
 	var	getUrl = "https://datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full"
 	if (options['update'] == true)
 	{
 		getUrl = "https://datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_UPDATE_DAILY&day=toc-update-" + dayOfWeek
-	} 
+	}
 	var recordsParsed = 0
 	console.log("Fetching " + getUrl)
 	request(
 	{
-		uri: getUrl, 
+		uri: getUrl,
 		method: "GET",
 		gzip: true,
 		auth: {
-			'username': config.username, 
+			'username': config.username,
 			'pass': config.password
 		},
 		followRedirect: true
@@ -520,7 +532,7 @@ function importSchedule(db, options , cb)
 				console.log("Inserting last associations")
 				if (assocInserts.length >= 1)
 				{
-					collection.insert(assocInserts, {w:1}, function (error, records) {						
+					collection.insert(assocInserts, {w:1}, function (error, records) {
 						if (error)
 						{
 							console.log(error)
@@ -536,8 +548,8 @@ function importSchedule(db, options , cb)
 				}
 			})
 		})
-		
-		db.collection('TIPLOC', function (err, collection ) {	
+
+		db.collection('TIPLOC', function (err, collection ) {
 			collection.ensureIndex({'tiploc_code':1, 'stanox':1,'nalco':1},function ()
 			{
 				console.log("TIPLOC indexed on tiploc_code, stanox and nalco")
@@ -592,10 +604,100 @@ function importSchedule(db, options , cb)
 	})
 }
 
+function importDarwinReference( db, cb ) {
+   var c = new ftpClient();
+   var gzip = zlib.createGunzip()
+   db.collection('REFERENCE', function (err, collection) {
+      c.on('ready', function() {
+         c.list('.', function (err, list) {
+            list.forEach( function ( file ) {
+               if (file.name.match(/ref_v3.xml.gz$/) != null)
+               {
+                  debug('importDarwinReference', "retrieve " + file.name)
+                  c.get(file.name, function(err, stream) {
+                     if (err) throw err;
+                     stream.once('close', function() { c.end(); });
+                     var unzipped = stream.pipe(gzip)
+                     unzipped.pipe(xmlNodes('LocationRef')).pipe(xmlObjects()).on('data', function (data) {
+                        debug('LocationRef',data.LocationRef)
+                        var location = data.LocationRef.$
+                        // update a location that already exists with the darwin data - lookup by TIPLOC
+                        var updateDoc = { 'darwin': { 'locname': location.locname, 'crs': location.crs, 'toc': location.toc}}
+                        debug('update', updateDoc)
+                        collection.update({$and : [{'refType':{ $eq: 'GeographicData'}}, {'TIPLOC': { $eq:  location.tpl}}]}, { $set: updateDoc}, {upsert: true})
+                     });
+                     unzipped.pipe(xmlNodes('Via')).pipe(xmlObjects()).on('data', function (data) {
+                        debug('Via', data.Via)
+                        var viaPoint = data.Via.$
+                        viaPoint.refType = 'Via'
+                        collection.insert(viaPoint)
+                     })
+                     unzipped.pipe(xmlNodes('TocRef')).pipe(xmlObjects()).on('data', function (data) {
+                        //debug('TocRef', data.Via)
+                        var tocRecord = data.TocRef.$
+                        tocRecord.refType = 'TocRef'
+                        collection.insert(tocRecord)
+                     })
+                     unzipped.pipe(xmlNodes('LateRunningReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data', function (data) {
+                        //debug('LateRunningReason', data.Reason)
+                        var lateReason = data.Reason.$
+                        lateReason.refType = 'LateRunningReason'
+                        collection.update({'refType':'LateRunningReason', code: lateReason.code}, lateReason, { upsert: true})
+                     })
+                     unzipped.pipe(xmlNodes('CancellationReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data', function (data) {
+                        //debug('CancellationReason', data.Reason)
+                        var cancelledReason = data.Reason.$
+                        cancelledReason.refType = 'LateRunningReason'
+                        collection.update({'refType':'CancelledReason', code: cancelledReason.code}, cancelledReason, { upsert: true})
+                     })
+                  })
+               }
+            })
+          })
+       })
+     // connect to localhost:21 as anonymous
+     c.connect({host: config.darwin.ftpHost, port: 21, user: config.darwin.ftpUser, password: config.darwin.ftpPassword});
+  })
+}
+
+function importDarwinSchedule( db, cb ) {
+   var c = new ftpClient();
+   var gzip = zlib.createGunzip()
+   db.collection('DSCHEDULE', function (err, collection) {
+      c.on('ready', function() {
+         c.list('.', function (err, list) {
+            list.forEach( function ( file ) {
+               if (file.name.match(/_v8.xml.gz$/) != null)
+               {
+                  debug('importDarwinSchedule', "retrieve " + file.name)
+                  c.get(file.name, function(err, stream) {
+                     if (err) throw err;
+                     stream.once('close', function() { c.end(); });
+                     var unzipped = stream.pipe(gzip)
+                     unzipped.pipe(xmlNodes('Journey')).pipe(xmlObjects({explicitChildren:true, preserveChildrenOrder: true})).on('data', function (data) {
+                        debug('Journey',data.Journey)
+                        var journey = data.Journey.$
+                        // update a location that already exists with the darwin data - lookup by TIPLOC
+
+                        debug('update', journey)
+                        collection.update({'rid': journey.rid}, { $set: journey}, {upsert: true})
+                     });
+
+                  })
+               }
+            })
+          })
+       })
+     // connect to localhost:21 as anonymous
+     c.connect({host: config.darwin.ftpHost, port: 21, user: config.darwin.ftpUser, password: config.darwin.ftpPassword});
+  })
+}
 
 module.exports = {
 	'importSMART': importSMART,
 	'importCORPUS': importCORPUS,
 	'importReferenceData': importReferenceData,
-	'importSchedule': importSchedule
+	'importSchedule': importSchedule,
+   'importDarwinReference': importDarwinReference,
+   'importDarwinSchedule': importDarwinSchedule
 }

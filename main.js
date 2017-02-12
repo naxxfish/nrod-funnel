@@ -13,7 +13,8 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 	app.get( '/test', function (req, resp)
 	{
 		var collection = db.collection('TRAINS')
-		collection.find({'movementActive':true, 'tdActive': true, 'lastSeen.location.TIPLOC': 'LEWISHM'}, {}, function (error, doc) {
+		collection.find({'movementActive':true, 'tdActive': true, 'lastSeen.location.TIPLOC': 'LEWISHM'}).toArray( function (error, doc) {
+         console.log(doc)
 			resp.send(JSON.stringify(doc))
 		})
 	})

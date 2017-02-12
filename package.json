@@ -3,23 +3,28 @@
   "author": "Chris Roberts",
   "version": "0.1.0",
   "description": "Network Rail data aggregation into a mongoDB",
-  "repository" : 
-  {
+  "repository": {
     "type": "git",
     "url": "https://github.com/naxxfish/nrod-funnel"
   },
   "dependencies": {
     "JSONStream": "git://github.com/dominictarr/JSONStream.git",
+    "chalk": "*",
+    "compression": "1.0.11",
     "csv-stream": "*",
     "debug": "*",
     "dev-null": "*",
     "event-stream": "*",
-    "mongodb": "*",
-    "stomp-client": "*",
-    "chalk": "*",
-    "request": "*",
     "express": "4.8.4",
-    "compression": "1.0.11",
-    "moment": "*"
+    "ftp": "^0.3.10",
+    "moment": "*",
+    "mongodb": "*",
+    "request": "*",
+    "stomp-client": "*",
+    "stompit": "^0.24.0",
+    "stream-json": "^0.4.2",
+    "xml-js": "^1.0.2",
+    "xml-nodes": "^0.1.5",
+    "xml-objects": "^1.0.1"
   }
 }

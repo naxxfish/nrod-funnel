@@ -7,7 +7,8 @@ var MongoClient = require('mongodb').MongoClient;
 var install = require('./install')
 var chalk = require('chalk')
 var moment = require('moment')
-MongoClient.connect('mongodb://trainmon:trainmon@localhost:27017/trainmon?w=0', function (err, db) {
+
+MongoClient.connect(config.mongo.connectionString, function (err, db) {
 	if (err)
 	{
 		console.log(err)
