@@ -114,6 +114,10 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		numMessagesSinceLast++
       var source = makeSource();
       var assembler = new Assembler();
+      if (msg == undefined)
+      {
+         return;
+      }
       msg.pipe(source.input)
          source.output.on('data', function (message) {
          debug('vstp_message',message)
@@ -152,6 +156,10 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
 		numMessagesSinceLast++
       var assembler = new Assembler();
       var source = makeSource();
+      if (msg == undefined)
+      {
+         return;
+      }
       msg.pipe(source.input)
       source.output.on('data', function (chunk) {
          assembler[chunk.name] && assembler[chunk.name](chunk.value);
