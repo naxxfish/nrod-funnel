@@ -1,25 +1,31 @@
-var express = require('express');
-var app = express();
-var compression = require('compression')
-var MongoClient = require('mongodb').MongoClient;
-var config = require('./config')
+const restify = require('restify');
+const compression = require('compression')
+const MongoClient = require('mongodb').MongoClient;
+const config = require('./config')
+const bunyan = require('bunyan');
+var log = bunyan.createLogger({name: 'nrod-api'});
 
-MongoClient.connect(config.mongo.connectionString, function (err, db)
+MongoClient.connect(config.mongo.connectionString, (err, db) =>
 {
-	app.use( compression({ threshold: 512 }) )
+   var server = restify.createServer({
+      log: log,
+      name: 'nrod-api'
+   })
+   server.on('after', restify.auditLogger({
+     log: log
+   }));
 
-	app.use(express.static(__dirname + '/wwwroot'));
-
-	app.get( '/test', function (req, resp)
+	server.get( '/test', function (req, resp, next)
 	{
 		var collection = db.collection('TRAINS')
-		collection.find({'movementActive':true, 'tdActive': true, 'lastSeen.location.TIPLOC': 'LEWISHM'}).toArray( function (error, doc) {
-         console.log(doc)
-			resp.send(JSON.stringify(doc))
+		collection.find({'movementActive':true, 'tdActive': true, 'lastSeen.location.TIPLOC': 'LEWISHM'}).toArray( (error, doc) => {
+         log.debug(doc)
+			resp.end(JSON.stringify(doc))
+         next()
 		})
 	})
 
-	var server = app.listen(3000, function () {
-		console.log("Listening on port %d", server.address().port)
+	server.listen(3000, () => {
+		log.info('%s listening at %s', server.name, server.url)
 	})
 })
