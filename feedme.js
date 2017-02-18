@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
+const bunyan = require('bunyan');
 var config = require('./config')
-
-var debug = require('debug')('nrod-main')
-
+const statware = require('statware');
 var VSTPDebug = require('debug')('nrod-vstp')
 var tdParser = require('./lib/tdParser')
 var trustParser = require('./lib/trustParser')
@@ -17,7 +16,7 @@ var makeSource = require("stream-json");
 
 var Parser = require("stream-json/Parser");
 var Streamer = require("stream-json/Streamer");
-var Assembler  = require("stream-json/utils/Assembler");
+var Assembler = require("stream-json/utils/Assembler");
 
 var MongoClient = require('mongodb').MongoClient;
 
@@ -31,146 +30,155 @@ var numTRUSTMessagesSinceLast = 0;
 var MongoClient = require('mongodb').MongoClient;
 var lastUpdateTime = moment()
 var updateI = 0
-debug('main',config.securityToken)
+var log = bunyan.createLogger({
+    name: 'nrod-feed'
+});
 
-MongoClient.connect(config.mongo.connectionString, function (err, db)
-{
-	if (err)
-	{
-		console.log("Error connecting to DB: " + err)
-		return
-	}
-   var manager = new stompit.ConnectFailover(
-      [
-         {
+log.info({
+    'securityToken': config.securityToken
+})
+
+var stats = statware()
+
+stats.installProcessInfo()
+stats.installSystemInfo()
+
+MongoClient.connect(config.mongo.connectionString, function(err, db) {
+    if (err) {
+        log.fatal("Error connecting to DB: " + err)
+        return
+    }
+    var manager = new stompit.ConnectFailover(
+        [{
             'host': config.stompHost,
             'port': config.stompPort,
             'connectHeaders': {
-               'heart-beat':'5000,5000',
-               'host': config.stompHost,
-               'login': config.username,
-               'passcode': config.password
+                'heart-beat': '5000,5000',
+                'host': config.stompHost,
+                'login': config.username,
+                'passcode': config.password
             },
             'useExponentialBackOff': true
-         }
-      ],
-      {
-      'maxReconnects': 10
-   })
-   manager.connect (function (error, client, reconnect) {
-      if (error)
-      {
-         console.error('Terminal problem connecting to STOMP host ' + error)
-         return
-      }
-      client.on('error', function(error_frame) {
-   		console.error(error_frame.body);
-         reconnect()
-   	});
-		debug('client.on.connected')
-		setInterval( () => 
-		{
-			var timeSinceLast = (moment().diff(lastUpdateTime))/1000
-			lastUpdateTime = moment()
-			if (updateI % 10 == 0)
-			{
-				// print headers
-				console.log('Batches (total/per sec)\tTD (total /per sec)\tTRUST (total/per sec)');
-			}
-			console.log(numMessages + '/' +
-				Math.round(numMessagesSinceLast / timeSinceLast) + '\t\t\t' +
-				numTDMessages + '/' +
-				Math.round(numTDMessagesSinceLast / timeSinceLast) + '\t\t\t' +
-				numTRUSTMessages + '/' +
-				Math.round(numTRUSTMessagesSinceLast / timeSinceLast));
-			updateI++
-			numTRUSTMessagesSinceLast = 0
-			numTDMessagesSinceLast = 0
-			numMessagesSinceLast = 0
+        }], {
+            'maxReconnects': 10
+        })
+    manager.connect(function(error, client, reconnect) {
+        if (error) {
+            console.fatal('Terminal problem connecting to STOMP host ' + error)
+            return
+        }
+        client.on('error', function(error_frame) {
+            log.error({
+                'stompError': error_frame.body
+            });
+            reconnect()
+        });
+        log.info('client.on.connected')
+        setInterval(() => {
+            stats.getStats((metrics) => {
 
-		}, 5000)
-		if (config.feeds.TD != undefined)
-		{
-			client.subscribe({destination: '/topic/' + config.tdChannel, ack: 'auto'} , td_message_callback)
-		}
-		if (config.feeds.TRUST == true)
-		{
-			client.subscribe({destination: '/topic/' + config.movementChannel, ack: 'auto'} , movements_message_callback);
-		}
-		if (config.feeds.VSTP == true)
-		{
-			client.subscribe({destination: '/topic/VSTP_ALL', ack: 'auto'}, vstp_message_callback)
-		}
-		console.log(chalk.yellow('Connected session '))
-   })
 
-	process.on('SIGINT', function() {
-		console.log(chalk.green('\nConsumed ' + numMessages + ' message batches, TD messages: ' + numTDMessages + ', TRUST messages: ' + numTRUSTMessages));
-		process.exit();
-	});
+                log.info({
+                    'timestamp': moment(),
+                    'numMessages': metrics.numMessages,
+                    'numTdMessages': metrics.numTDMessages,
+                    'numTRUSTMessages': metrics.numTRUSTMessages,
+                })
+            })
+        }, 10000)
+        if (config.feeds.TD != undefined) {
+            client.subscribe({
+                destination: '/topic/' + config.tdChannel,
+                ack: 'auto'
+            }, (error, msg) => {
+                message_callback_wrap(error, msg, td_message_callback)
+            })
+        }
+        if (config.feeds.TRUST == true) {
+            client.subscribe({
+                destination: '/topic/' + config.movementChannel,
+                ack: 'auto'
+            }, (error, msg) => {
+                message_callback_wrap(error, msg, movements_message_callback)
+            });
+        }
+        if (config.feeds.VSTP == true) {
+            client.subscribe({
+                destination: '/topic/VSTP_ALL',
+                ack: 'auto'
+            }, (error, msg) => {
+                message_callback_wrap(error, msg, vstp_message_callback)
+            })
+        }
+        log.info('Connected to STOMP server')
+    })
 
-	function vstp_message_callback(error, msg) {
-		numMessages++
-		numMessagesSinceLast++
-      var source = makeSource();
-      var assembler = new Assembler();
-      if (msg == undefined)
-      {
-         return;
-      }
-      msg.pipe(source.input)
-         source.output.on('data',  (message) => {
-         debug('vstp_message',message)
-         //vstpParser.parse(message['VSTPCIFMsgV1'])
-      })
-	}
+    process.on('SIGINT', function() {
+        log.info({
+            'state': 'exiting',
+            'totalMsgs': numMessages,
+            'tdMessages': numTDMessages,
+            'trustMessages': numTRUSTMessages
+        })
+        process.exit();
+    });
 
-	function td_message_callback(error, msg) {
-		numMessages++
-		numMessagesSinceLast++
-      var assembler = new Assembler();
-      var source = makeSource();
-      if (msg == undefined)
-      {
-         return
-      }
-      msg.pipe(source.input)
-      source.output.on('data', (chunk) => {
-         assembler[chunk.name] && assembler[chunk.name](chunk.value);
-      }).
-      on('end', function () {
-         var messages = assembler.current
-         debug('td_message',messages)
-   		messages.forEach( (message) =>
-   		{
-   			numTDMessages++
-   			numTDMessagesSinceLast++
-   			tdParser.parse(db, message)
-   		})
-      })
-	}
+    function message_callback_wrap(error, msg, cb) {
+        stats.increment('numMessages')
+        return cb(error, msg)
+    }
 
-	function movements_message_callback(error, msg)
-	{
-		numMessages++
-		numMessagesSinceLast++
-      var assembler = new Assembler();
-      var source = makeSource();
-      if (msg == undefined)
-      {
-         return;
-      }
-      msg.pipe(source.input)
-      source.output.on('data', (chunk) => {
-         assembler[chunk.name] && assembler[chunk.name](chunk.value);
-      }).on('end', function () {
-         var messages = assembler.current
-         debug('movements_message',assembler.current)
-   		messages.forEach( (message) => {
-   			numTRUSTMessages++
-   			numTRUSTMessagesSinceLast++
-   			trustParser.parse(db, message)
-   		})
-      })
-	}
+    function vstp_message_callback(error, msg) {
+
+        var source = makeSource();
+        var assembler = new Assembler();
+        if (msg == undefined) {
+            return;
+        }
+        msg.pipe(source.input)
+        source.output.on('data', (message) => {
+            log.debug('vstp_message', message)
+            stats.increment('numVSTPMessages')
+            //vstpParser.parse(message['VSTPCIFMsgV1'])
+        })
+    }
+
+    function td_message_callback(error, msg) {
+        var assembler = new Assembler();
+        var source = makeSource();
+        if (msg == undefined) {
+            return
+        }
+        msg.pipe(source.input)
+        source.output.on('data', (chunk) => {
+            assembler[chunk.name] && assembler[chunk.name](chunk.value);
+        }).
+        on('end', function() {
+            var messages = assembler.current
+            log.debug('td_message', messages)
+            messages.forEach((message) => {
+                stats.increment('numTDMessages')
+                tdParser.parse(db, message)
+            })
+        })
+    }
+
+    function movements_message_callback(error, msg) {
+        var assembler = new Assembler();
+        var source = makeSource();
+        if (msg == undefined) {
+            return;
+        }
+        msg.pipe(source.input)
+        source.output.on('data', (chunk) => {
+            assembler[chunk.name] && assembler[chunk.name](chunk.value);
+        }).on('end', function() {
+            var messages = assembler.current
+            log.debug('movements_message', assembler.current)
+            messages.forEach((message) => {
+                stats.increment('numTRUSTMessages')
+                trustParser.parse(db, message)
+            })
+        })
+    }
 })
