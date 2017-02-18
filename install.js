@@ -1,31 +1,29 @@
 #!/usr/bin/env node
 
-var config = require('./config')
-var debug = require('debug')('trainmon-installer')
+const config = require('./config')
 const bunyan = require('bunyan');
-var sys = require('util');
-var readline = require('readline')
-var zlib = require('zlib')
-var JSONStream = require('JSONStream')
-var csv = require('csv-stream')
-var es = require('event-stream')
-var request = require('request')
-var chalk = require('chalk')
-var ftpClient = require('ftp');
-var xmlNodes = require('xml-nodes');
-var xmlObjects = require('xml-objects');
+const zlib = require('zlib')
+const JSONStream = require('JSONStream')
+const csv = require('csv-stream')
+const es = require('event-stream')
+const request = require('request')
+const sftpClient = require('ftp');
+const xmlNodes = require('xml-nodes');
+const xmlObjects = require('xml-objects');
 var log = bunyan.createLogger({
     name: 'nrod-installer'
 });
 
 // Retrieve
-var MongoClient = require('mongodb').MongoClient;
+const MongoClient = require('mongodb').MongoClient;
 
 function main() {
-    log.debug({'main', config.securityToken})
+    log.debug({
+        'main': config.securityToken
+    })
     MongoClient.connect(config.mongo.connectionString, (err, db) => {
         if (err) {
-            console.log("Error: " + err)
+            log.fatal("Error: " + err)
             return
         }
 
@@ -38,7 +36,7 @@ function main() {
                 log.info("SMART data imported")
                 importCORPUS(db, () => {
                     log.info("CORPUS data imported")
-                    console.log("Importing initial (full) SCHEDULE data")
+                    log.info("Importing initial (full) SCHEDULE data")
                     importSchedule(db, {
                         update: false
                     }, () => {
@@ -46,7 +44,7 @@ function main() {
                         importDarwinReference(db, () => {
                             log.info("Darwin Reference data imported!")
                             importDarwinSchedule(db, () => {
-                                console.log(chalk.green("Darwin Schedule data imported!"))
+                                log.info("Darwin Schedule data imported!")
                                 db.close()
                                 process.exit()
                             })
@@ -78,7 +76,7 @@ function importSMART(db, cb) {
         followRedirect: true
     }, (error, response, body) => {
         if (error) {
-            console.error(error)
+            log.error(error)
             return
         }
         var dataURI = response.request.uri.href
@@ -89,7 +87,7 @@ function importSMART(db, cb) {
             followRedirect: true
         }, (err, response, body) => {
             if (err) {
-                console.error(err)
+                log.error(err)
             }
         })
         var scheduleItems = 0
@@ -100,7 +98,7 @@ function importSMART(db, cb) {
         var jstream = JSONStream.parse("BERTHDATA.*")
 
         function anno(items) {
-            console.log("Written " + items + " SMART Data rows")
+            log.info("Written " + items + " SMART Data rows")
         }
         var rows = 0
 
@@ -109,13 +107,13 @@ function importSMART(db, cb) {
                 'FROMBERTH': 1,
                 'TOBERTH': 1
             }, {}, () => {
-                console.log("Index created")
+                log.info("Index created")
             })
             var documents = []
             dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync((data) => {
                 rows++
                 data.type = 'SMART'
-                //console.log(data)
+                //log.info(data)
                 documents.push(data)
                 //				log.debug('insertDocuments','documents.length',documents.length )
                 if (documents.length >= 500) {
@@ -124,7 +122,7 @@ function importSMART(db, cb) {
                         w: 1
                     }, (err, records) => {
                         if (err) {
-                            console.error(err)
+                            log.error(err)
                         }
                         log.debug('insertDocuments', 'inserted', records.length, 'records')
                         //anno(Object.keys(records))
@@ -136,7 +134,7 @@ function importSMART(db, cb) {
                     w: 1
                 }, (err, records) => {
                     if (err) {
-                        console.error(err)
+                        log.error(err)
                     }
                     log.debug('insertDocumentsFinally', records.length)
                     anno(rows)
@@ -166,7 +164,7 @@ function importCORPUS(db, cb) {
         var dataURI = response.request.uri.href
 
         function anno(items) {
-            console.log("Processed " + items + " CORPUS rows")
+            log.info("Processed " + items + " CORPUS rows")
         }
 
         db.collection('CORPUS', (err, collection) => {
@@ -175,7 +173,7 @@ function importCORPUS(db, cb) {
             collection.ensureIndex({
                 'STANOX': 1
             }, {}, () => {
-                console.log("Indexed on STANOX")
+                log.info("Indexed on STANOX")
             })
             var dataStream = request({
                 uri: dataURI,
@@ -200,7 +198,7 @@ function importCORPUS(db, cb) {
                     w: 1
                 }, (err, records) => {
                     anno(records.length)
-                    console.log("Completed inserting " + rows + " CORPUS rows")
+                    log.info("Completed inserting " + rows + " CORPUS rows")
                     cb();
                 })
             })
@@ -215,7 +213,7 @@ function importReferenceData(db, filename, cb) {
             'TIPLOC': 1,
             'refType': 1
         }, {}, () => {
-            console.log("Indexed on TIPLOC")
+            log.info("Indexed on TIPLOC")
         })
         var fs = require('fs')
         var gzip = zlib.createGunzip()
@@ -360,17 +358,17 @@ function importReferenceData(db, filename, cb) {
                 //log.debug('insertDocuments', documents.length)
                 collection.insert(documents, (error, records) => {
                     insertedRows += records.length
-                    console.log(insertedRows + " REFERENCE records inserted")
+                    log.info(insertedRows + " REFERENCE records inserted")
                 })
                 documents = []
             }
         })
         tsvStream.on('end', () => {
-            console.log("Inserting last REFERENCE documents")
+            log.info("Inserting last REFERENCE documents")
             collection.insert(documents, (error, records) => {
                 insertedRows += records.length
-                console.log(insertedRows + " records inserted")
-                console.log("Processed " + rows + " rows")
+                log.info(insertedRows + " records inserted")
+                log.info("Processed " + rows + " rows")
                 cb()
             })
         })
@@ -390,7 +388,7 @@ function importSchedule(db, options, cb) {
         getUrl = "https://datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_UPDATE_DAILY&day=toc-update-" + dayOfWeek
     }
     var recordsParsed = 0
-    console.log("Fetching " + getUrl)
+    log.info("Fetching " + getUrl)
     request({
         uri: getUrl,
         method: "GET",
@@ -418,9 +416,9 @@ function importSchedule(db, options, cb) {
             gzip: true,
             followRedirect: false
         })
-        if (!options['update']) {
-            dataStream = dataStream.pipe(gzip)
-        }
+        //if (!options['update']) { // turns out update are gzipped too
+        dataStream = dataStream.pipe(gzip)
+        //}
         var schedDone = false
         var assocDone = false
         var tiplocDone = false
@@ -428,12 +426,12 @@ function importSchedule(db, options, cb) {
         function callbackWhenAllDone() {
             if (schedDone && assocDone && tiplocDone) {
                 if (options['update'] == true) {
-                    console.log("Completed processing file: ")
-                    console.log(scheduleItems + " schedules inserted, " + schedulesDeleted + " deleted")
-                    console.log(associationItems + " assications inserted, " + associationDeleted + " deleted")
-                    console.log(tiplocItems + " tiploc items inserted, " + tiplocDeleted + " items deleted")
+                    log.info("Completed processing file: ")
+                    log.info(scheduleItems + " schedules inserted, " + schedulesDeleted + " deleted")
+                    log.info(associationItems + " assications inserted, " + associationDeleted + " deleted")
+                    log.info(tiplocItems + " tiploc items inserted, " + tiplocDeleted + " items deleted")
                 } else {
-                    console.log("Completed processing file: " + scheduleItems + " schedules, " + associationItems + " associations, " + tiplocItems + " tiploc items")
+                    log.info("Completed processing file: " + scheduleItems + " schedules, " + associationItems + " associations, " + tiplocItems + " tiploc items")
                 }
                 cb()
             }
@@ -443,7 +441,7 @@ function importSchedule(db, options, cb) {
             collection.ensureIndex({
                 'CIF_train_uid': 1
             }, (err) => {
-                console.log("SCHEDULE indexed on CIF_train_uid")
+                log.info("SCHEDULE indexed on CIF_train_uid")
             })
             var scheduleInserts = []
             var insertedScheduleRecords = 0
@@ -469,22 +467,26 @@ function importSchedule(db, options, cb) {
                     }, (error, records) => {
                         if (error) {
                             log.debug('inserts', error)
-                            console.log(error)
+                            log.info(error)
                         }
                         //log.debug('scheduleInserts', records, error)
-                        insertedScheduleRecords += records.length
-                        console.log("Inserted " + insertedScheduleRecords + " SCHEDULE records")
+                        if (records != null){
+                           insertedScheduleRecords += records.length
+                        }
+                        log.info("Inserted " + insertedScheduleRecords + " SCHEDULE records")
                     })
                     scheduleInserts = []
                 }
             })).on('end', function() {
                 if (scheduleInserts.length >= 1) {
-                    console.log("Inserting last Schedules")
+                    log.info("Inserting last Schedules")
                     collection.insert(scheduleInserts, {
                         w: 1
                     }, (error, records) => {
-                        insertedScheduleRecords += records.length
-                        console.log("Inserted " + insertedScheduleRecords + " SCHEDULE records")
+                        if (records != null) {
+                            insertedScheduleRecords += records.length
+                            log.info("Inserted " + insertedScheduleRecords + " SCHEDULE records")
+                        }
                         schedDone = true
                         callbackWhenAllDone()
                     })
@@ -501,7 +503,7 @@ function importSchedule(db, options, cb) {
             collection.ensureIndex({
                 'main_train_uid': 1
             }, () => {
-                console.log("ASSOCIATION indexed on main_train_uid")
+                log.info("ASSOCIATION indexed on main_train_uid")
             })
             dataStream.pipe(associationJsonStream).pipe(es.mapSync((data) => {
                 associationItems++
@@ -524,22 +526,26 @@ function importSchedule(db, options, cb) {
                     collection.insert(assocInserts, {
                         w: 1
                     }, (error, records) => {
-                        insertedAssocRecords += records.length
-                        console.log("Inserted " + insertedAssocRecords + " ASSOCIATION records")
+                       if (records != null)
+                       {
+                          insertedAssocRecords += records.length
+                       }
+
+                        log.info("Inserted " + insertedAssocRecords + " ASSOCIATION records")
                     })
                     assocInserts = []
                 }
             })).on('end', function() {
-                console.log("Inserting last associations")
+                log.info("Inserting last associations")
                 if (assocInserts.length >= 1) {
                     collection.insert(assocInserts, {
                         w: 1
                     }, (error, records) => {
                         if (error) {
-                            console.log(error)
+                            log.error(error)
                         }
                         insertedAssocRecords += records.length
-                        console.log("Inserted " + insertedAssocRecords + " ASSOCIATION records")
+                        log.info("Inserted " + insertedAssocRecords + " ASSOCIATION records")
                         assocDone = true
                         callbackWhenAllDone()
                     })
@@ -556,7 +562,7 @@ function importSchedule(db, options, cb) {
                 'stanox': 1,
                 'nalco': 1
             }, () => {
-                console.log("TIPLOC indexed on tiploc_code, stanox and nalco")
+                log.info("TIPLOC indexed on tiploc_code, stanox and nalco")
             })
             var tiplocInserts = []
             var insertedTiplocRows = 0
@@ -582,24 +588,24 @@ function importSchedule(db, options, cb) {
                         w: 1
                     }, (error, records) => {
                         if (error) {
-                            console.log(error)
+                            log.error(error)
                         }
                         insertedTiplocRows += records.length
-                        console.log("Inserted " + insertedTiplocRows + " TIPLOC records")
+                        log.info("Inserted " + insertedTiplocRows + " TIPLOC records")
                     })
                     tiplocInserts = []
                 }
             })).on('end', function() {
-                console.log("Inserting last TIPLOC records")
+                log.info("Inserting last TIPLOC records")
                 if (tiplocInserts.length >= 1) {
                     collection.insert(tiplocInserts, {
                         w: 1
                     }, (error, records) => {
                         if (error) {
-                            console.log(error)
+                            log.error(error)
                         }
                         insertedTiplocRows += records.length
-                        console.log("Inserted " + insertedTiplocRows + " TIPLOC records")
+                        log.info("Inserted " + insertedTiplocRows + " TIPLOC records")
                         tiplocDone = true
                         callbackWhenAllDone()
                     })

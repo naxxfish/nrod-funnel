@@ -1,8 +1,10 @@
+const config = require('./config')
+
 const restify = require('restify');
 const compression = require('compression')
 const MongoClient = require('mongodb').MongoClient;
-const config = require('./config')
 const bunyan = require('bunyan');
+
 var log = bunyan.createLogger({name: 'nrod-api'});
 
 MongoClient.connect(config.mongo.connectionString, (err, db) =>

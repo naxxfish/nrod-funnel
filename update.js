@@ -1,12 +1,12 @@
-var config = require('./config')
-var sys = require('sys')
-var zlib = require('zlib')
-var fs = require('fs')
-var MongoClient = require('mongodb').MongoClient;
-var install = require('./install')
-var chalk = require('chalk')
-var moment = require('moment')
+const config = require('./config')
+const install = require('./install')
+
+const zlib = require('zlib')
+const fs = require('fs')
+const MongoClient = require('mongodb').MongoClient;
+const moment = require('moment')
 const bunyan = require('bunyan');
+
 var log = bunyan.createLogger({name: 'nrod-updater'});
 
 MongoClient.connect(config.mongo.connectionString, (err, db) => {

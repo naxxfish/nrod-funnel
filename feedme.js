@@ -1,24 +1,23 @@
 #!/usr/bin/env node
 
 const bunyan = require('bunyan');
-var config = require('./config')
+const config = require('./config')
 const statware = require('statware');
-var VSTPDebug = require('debug')('nrod-vstp')
-var tdParser = require('./lib/tdParser')
-var trustParser = require('./lib/trustParser')
-var vstpParser = require('./lib/vstpParser')
 
-var sys = require('util');
-var stompit = require('stompit');
-var chalk = require('chalk');
-var moment = require('moment')
-var makeSource = require("stream-json");
+const tdParser = require('./lib/tdParser')
+const trustParser = require('./lib/trustParser')
+const vstpParser = require('./lib/vstpParser')
 
-var Parser = require("stream-json/Parser");
-var Streamer = require("stream-json/Streamer");
-var Assembler = require("stream-json/utils/Assembler");
+const stompit = require('stompit');
+const moment = require('moment')
+const makeSource = require("stream-json");
+const MongoClient = require('mongodb').MongoClient;
 
-var MongoClient = require('mongodb').MongoClient;
+const Parser = require("stream-json/Parser");
+const Streamer = require("stream-json/Streamer");
+const Assembler = require("stream-json/utils/Assembler");
+
+const MongoClient = require('mongodb').MongoClient;
 
 var numMessages = 0;
 var numMessagesSinceLast = 0;
@@ -27,7 +26,7 @@ var numTRUSTMessages = 0;
 var numTDMessagesSinceLast = 0;
 var numTRUSTMessagesSinceLast = 0;
 
-var MongoClient = require('mongodb').MongoClient;
+
 var lastUpdateTime = moment()
 var updateI = 0
 var log = bunyan.createLogger({
@@ -76,8 +75,6 @@ MongoClient.connect(config.mongo.connectionString, function(err, db) {
         log.info('client.on.connected')
         setInterval(() => {
             stats.getStats((metrics) => {
-
-
                 log.info({
                     'timestamp': moment(),
                     'numMessages': metrics.numMessages,
