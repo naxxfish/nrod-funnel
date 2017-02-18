@@ -68,7 +68,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
          reconnect()
    	});
 		debug('client.on.connected')
-		setInterval(function ()
+		setInterval( () => 
 		{
 			var timeSinceLast = (moment().diff(lastUpdateTime))/1000
 			lastUpdateTime = moment()
@@ -119,7 +119,7 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
          return;
       }
       msg.pipe(source.input)
-         source.output.on('data', function (message) {
+         source.output.on('data',  (message) => {
          debug('vstp_message',message)
          //vstpParser.parse(message['VSTPCIFMsgV1'])
       })
@@ -135,13 +135,13 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
          return
       }
       msg.pipe(source.input)
-      source.output.on('data', function (chunk) {
+      source.output.on('data', (chunk) => {
          assembler[chunk.name] && assembler[chunk.name](chunk.value);
       }).
       on('end', function () {
          var messages = assembler.current
          debug('td_message',messages)
-   		messages.forEach(function (message)
+   		messages.forEach( (message) =>
    		{
    			numTDMessages++
    			numTDMessagesSinceLast++
@@ -161,12 +161,12 @@ MongoClient.connect(config.mongo.connectionString, function (err, db)
          return;
       }
       msg.pipe(source.input)
-      source.output.on('data', function (chunk) {
+      source.output.on('data', (chunk) => {
          assembler[chunk.name] && assembler[chunk.name](chunk.value);
       }).on('end', function () {
          var messages = assembler.current
          debug('movements_message',assembler.current)
-   		messages.forEach(function (message) {
+   		messages.forEach( (message) => {
    			numTRUSTMessages++
    			numTRUSTMessagesSinceLast++
    			trustParser.parse(db, message)

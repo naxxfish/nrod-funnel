@@ -19,7 +19,7 @@ var MongoClient = require('mongodb').MongoClient;
 
 function main() {
    debug('main',config.securityToken)
-   MongoClient.connect(config.mongo.connectionString, function (err, db) {
+   MongoClient.connect(config.mongo.connectionString,  (err, db) => {
    	if (err)
    	{
    		console.log("Error: " + err)
@@ -29,18 +29,18 @@ function main() {
    	var referenceDataFilename = '20140116_ReferenceData.gz'
    	console.log("Initialising datasets")
    	console.log("Importing reference data from " + referenceDataFilename)
-   	importReferenceData(db, referenceDataFilename , function () {
+   	importReferenceData(db, referenceDataFilename ,  () => {
    		console.log(chalk.green("Reference Data imported"))
-   			importSMART(db, function() {
+   			importSMART(db, () => {
    			console.log("SMART data imported")
-   			importCORPUS(db , function () {
+   			importCORPUS(db ,  () => {
    				console.log(chalk.green("CORPUS data imported"))
    				console.log("Importing initial (full) SCHEDULE data")
-   				importSchedule(db, {update: false}, function (){
+   				importSchedule(db, {update: false},  () => {
    					console.log(chalk.green("Schedule data imported!"))
-                  importDarwinReference(db, function () {
+                  importDarwinReference(db,  () => {
                      console.log(chalk.green("Darwin Reference data imported!"))
-                     importDarwinSchedule(db, function () {
+                     importDarwinSchedule(db,  () => {
                         console.log(chalk.green("Darwin Schedule data imported!"))
                         db.close()
          					process.exit()
@@ -74,7 +74,7 @@ function importSMART(db, cb)
 			'pass': config.password
 		},
 		followRedirect: true
-	}, function (error, response, body) {
+	},  (error, response, body) => {
 		if (error)
 		{
 			console.error(error)
@@ -87,7 +87,7 @@ function importSMART(db, cb)
 			method: "GET",
 			gzip: true,
 			followRedirect: true
-		}, function (err, response, body) {
+		},  (err, response, body) => {
 			if (err)
 			{
 				console.error(err)
@@ -105,12 +105,12 @@ function importSMART(db, cb)
 		}
 		var rows = 0
 
-		db.collection('SMART', function (err, collection ) {
-			collection.ensureIndex({'FROMBERTH':1, 'TOBERTH':1}, {}, function () {
+		db.collection('SMART',  (err, collection) => {
+			collection.ensureIndex({'FROMBERTH':1, 'TOBERTH':1}, {},  () => {
 				console.log("Index created")
 			 })
 			var documents = []
-			dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync(function (data)
+			dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync( (data) =>
 			{
 				rows++
 				data.type = 'SMART'
@@ -120,7 +120,7 @@ function importSMART(db, cb)
 				if (documents.length >= 500)
 				{
 					debug('insertDocuments','inserting batch of documents', documents.length)
-					collection.insert( documents , {w:1}, function (err, records) {
+					collection.insert( documents , {w:1},  (err, records) => {
 						if (err)
 						{
 							console.error(err)
@@ -131,7 +131,7 @@ function importSMART(db, cb)
 					documents = []
 				}
 			})).on('end', function() {
-				collection.insert( documents , {w:1}, function (err, records) {
+				collection.insert( documents , {w:1},  (err, records) => {
 					if (err)
 					{
 						console.error(err)
@@ -162,7 +162,7 @@ function importCORPUS(db, cb)
 			'pass': config.password
 		},
 		followRedirect: true
-	}, function (error, response, body) {
+	},  (error, response, body) => {
 		var dataURI = response.request.uri.href
 
 		function anno ( items )
@@ -170,11 +170,11 @@ function importCORPUS(db, cb)
 			console.log("Processed " + items + " CORPUS rows")
 		}
 
-		db.collection('CORPUS', function (err, collection)
+		db.collection('CORPUS',  (err, collection) =>
 		{
 			var rows= 0
 			var documents = []
-			collection.ensureIndex({'STANOX':1}, {}, function() {
+			collection.ensureIndex({'STANOX':1}, {}, () => {
 				console.log("Indexed on STANOX")
 			})
 			var dataStream = request(
@@ -185,20 +185,20 @@ function importCORPUS(db, cb)
 				followRedirect: false
 			}).pipe(gzip)
 
-			dataStream.pipe(jstream).pipe(es.mapSync(function (doc) {
+			dataStream.pipe(jstream).pipe(es.mapSync( (doc) => {
 				rows++
 				doc.type = 'CORPUS'
 				documents.push(doc)
 				if (documents.length >= 500)
 				{
 					debug('insertDocuments', 'inserting batch of CORPUS records', documents.length)
-					collection.insert( documents , function (error, records) {
+					collection.insert( documents ,  (error, records) => {
 						anno(records.length)
 					})
 					documents = []
 				}
-			})).on('end', function () {
-				collection.insert(documents, {w:1}, function (err, records) {
+			})).on('end',  () => {
+				collection.insert(documents, {w:1},  (err, records) => {
 					anno(records.length)
 					console.log("Completed inserting " + rows + " CORPUS rows")
 					cb();
@@ -211,8 +211,8 @@ function importCORPUS(db, cb)
 function importReferenceData(db, filename, cb)
 {
 	debug('importReferenceData')
-	db.collection('REFERENCE', function (err, collection) {
-		collection.ensureIndex({'TIPLOC':1,'refType':1}, {}, function () {
+	db.collection('REFERENCE',  (err, collection) => {
+		collection.ensureIndex({'TIPLOC':1,'refType':1}, {},  () => {
 			console.log("Indexed on TIPLOC")
 		})
 		var fs = require('fs')
@@ -250,7 +250,7 @@ function importReferenceData(db, filename, cb)
 		var rows= 0
 		var insertedRows = 0
 		var documents = []
-		tsvStream.on('data', function (data) {
+		tsvStream.on('data',  (data) => {
 			rows++
 			var record = data
 			var doc = {}
@@ -359,16 +359,16 @@ function importReferenceData(db, filename, cb)
 			if (documents.length >= 1000)
 			{
 				//debug('insertDocuments', documents.length)
-				collection.insert( documents , function (error, records) {
+				collection.insert( documents ,  (error, records) => {
 				insertedRows += records.length
 				console.log(insertedRows + " REFERENCE records inserted")
 				})
 				documents = []
 			}
 		})
-		tsvStream.on('end', function () {
+		tsvStream.on('end',  () => {
 			console.log("Inserting last REFERENCE documents")
-			collection.insert( documents , function (error, records ){
+			collection.insert( documents ,  (error, records) => {
 				insertedRows += records.length
 				console.log(insertedRows + " records inserted")
 				console.log("Processed " + rows + " rows")
@@ -404,7 +404,7 @@ function importSchedule(db, options , cb)
 			'pass': config.password
 		},
 		followRedirect: true
-	}, function (error, response, body) {
+	},  (error, response, body) => {
 		var scheduleJsonStream = JSONStream.parse("JsonScheduleV1")
 		var associationJsonStream = JSONStream.parse("JsonAssociationV1")
 		var tiplocJsonStream = JSONStream.parse("TiplocV1")
@@ -448,13 +448,13 @@ function importSchedule(db, options , cb)
 			}
 		}
 
-		db.collection('SCHEDULE', function (err, collection ) {
-			collection.ensureIndex({'CIF_train_uid':1}, function (err) {
+		db.collection('SCHEDULE',  (err, collection ) => {
+			collection.ensureIndex({'CIF_train_uid':1},  (err) => {
 				console.log("SCHEDULE indexed on CIF_train_uid")
 			})
 			var scheduleInserts = []
 			var insertedScheduleRecords = 0
-			dataStream.pipe(scheduleJsonStream).pipe(es.mapSync(function (data) {
+			dataStream.pipe(scheduleJsonStream).pipe(es.mapSync( (data) => {
 				scheduleItems++
 				var txType = data['transaction_type']
 				delete data['transaction_type']
@@ -464,14 +464,14 @@ function importSchedule(db, options , cb)
 						scheduleInserts.push(data)
 						break;
 					case 'Delete':
-						collection.remove(data, {w:1}, function () {
+						collection.remove(data, {w:1},  () => {
 							schedulesDeleted++
 						})
 						break;
 				}
 				if (scheduleInserts.length >= 500)
 				{
-					collection.insert(scheduleInserts, {w:1}, function (error, records) {
+					collection.insert(scheduleInserts, {w:1},  (error, records) => {
 						if (error)
 						{
 							debug('inserts', error)
@@ -487,7 +487,7 @@ function importSchedule(db, options , cb)
 				if (scheduleInserts.length >= 1)
 				{
 					console.log("Inserting last Schedules")
-					collection.insert(scheduleInserts, {w:1}, function (error, records) {
+					collection.insert(scheduleInserts, {w:1},  (error, records) => {
 						insertedScheduleRecords += records.length
 						console.log("Inserted " + insertedScheduleRecords + " SCHEDULE records")
 						schedDone = true
@@ -500,13 +500,13 @@ function importSchedule(db, options , cb)
 			})
 		})
 
-		db.collection('ASSOCIATION', function (err, collection ) {
+		db.collection('ASSOCIATION',  (err, collection) => {
 			var assocInserts = []
 			var insertedAssocRecords = 0
-			collection.ensureIndex({'main_train_uid':1}, function () {
+			collection.ensureIndex({'main_train_uid':1},  () => {
 				console.log("ASSOCIATION indexed on main_train_uid")
 			})
-			dataStream.pipe(associationJsonStream).pipe(es.mapSync(function (data) {
+			dataStream.pipe(associationJsonStream).pipe(es.mapSync( (data) => {
 				associationItems++
 				var txType = data['transaction_type']
 				delete data['transaction_type']
@@ -517,12 +517,12 @@ function importSchedule(db, options , cb)
 						assocInserts.push( data )
 						break;
 					case 'Delete':
-						collection.remove(data, {w:1}, function () { associationDeleted++ })
+						collection.remove(data, {w:1},  () => { associationDeleted++ })
 						break;
 				}
 				if (assocInserts.length >= 1000)
 				{
-					collection.insert(assocInserts, {w:1}, function (error, records) {
+					collection.insert(assocInserts, {w:1},  (error, records) => {
 						insertedAssocRecords += records.length
 						console.log("Inserted " + insertedAssocRecords + " ASSOCIATION records")
 					})
@@ -532,7 +532,7 @@ function importSchedule(db, options , cb)
 				console.log("Inserting last associations")
 				if (assocInserts.length >= 1)
 				{
-					collection.insert(assocInserts, {w:1}, function (error, records) {
+					collection.insert(assocInserts, {w:1},  (error, records) => {
 						if (error)
 						{
 							console.log(error)
@@ -549,14 +549,14 @@ function importSchedule(db, options , cb)
 			})
 		})
 
-		db.collection('TIPLOC', function (err, collection ) {
-			collection.ensureIndex({'tiploc_code':1, 'stanox':1,'nalco':1},function ()
+		db.collection('TIPLOC',  (err, collection ) => {
+			collection.ensureIndex({'tiploc_code':1, 'stanox':1,'nalco':1}, () =>
 			{
 				console.log("TIPLOC indexed on tiploc_code, stanox and nalco")
 			})
 			var tiplocInserts = []
 			var insertedTiplocRows = 0
-			dataStream.pipe(tiplocJsonStream).pipe(es.mapSync(function (data) {
+			dataStream.pipe(tiplocJsonStream).pipe(es.mapSync( (data) => {
 				tiplocItems++
 				var txType = data['transaction_type']
 				delete data['transaction_type']
@@ -567,11 +567,11 @@ function importSchedule(db, options , cb)
 						tiplocInserts.push(data)
 						break;
 					case 'Delete':
-						collection.remove(data, {w:1}, function () { tiplocDeleted++ })
+						collection.remove(data, {w:1},  () => { tiplocDeleted++ })
 						break;
 				}
 				if (tiplocInserts.length >= 1000) {
-					collection.insert ( tiplocInserts, {w:1}, function (error, records) {
+					collection.insert ( tiplocInserts, {w:1}, (error, records) => {
 						if (error)
 						{
 							console.log(error)
@@ -585,7 +585,7 @@ function importSchedule(db, options , cb)
 				console.log("Inserting last TIPLOC records")
 				if (tiplocInserts.length >= 1)
 				{
-					collection.insert( tiplocInserts , {w:1} , function (error, records) {
+					collection.insert( tiplocInserts , {w:1} ,  (error, records) => {
 						if (error)
 						{
 							console.log(error)
@@ -607,18 +607,18 @@ function importSchedule(db, options , cb)
 function importDarwinReference( db, cb ) {
    var c = new ftpClient();
    var gzip = zlib.createGunzip()
-   db.collection('REFERENCE', function (err, collection) {
-      c.on('ready', function() {
-         c.list('.', function (err, list) {
-            list.forEach( function ( file ) {
+   db.collection('REFERENCE',  (err, collection) => {
+      c.on('ready', () => {
+         c.list('.',  (err, list) => {
+            list.forEach(  (file) => {
                if (file.name.match(/ref_v3.xml.gz$/) != null)
                {
                   debug('importDarwinReference', "retrieve " + file.name)
-                  c.get(file.name, function(err, stream) {
+                  c.get(file.name, (err, stream) => {
                      if (err) throw err;
-                     stream.once('close', function() { c.end(); });
+                     stream.once('close', () => { c.end(); });
                      var unzipped = stream.pipe(gzip)
-                     unzipped.pipe(xmlNodes('LocationRef')).pipe(xmlObjects()).on('data', function (data) {
+                     unzipped.pipe(xmlNodes('LocationRef')).pipe(xmlObjects()).on('data',  (data) => {
                         debug('LocationRef',data.LocationRef)
                         var location = data.LocationRef.$
                         // update a location that already exists with the darwin data - lookup by TIPLOC
@@ -626,25 +626,25 @@ function importDarwinReference( db, cb ) {
                         debug('update', updateDoc)
                         collection.update({$and : [{'refType':{ $eq: 'GeographicData'}}, {'TIPLOC': { $eq:  location.tpl}}]}, { $set: updateDoc}, {upsert: true})
                      });
-                     unzipped.pipe(xmlNodes('Via')).pipe(xmlObjects()).on('data', function (data) {
+                     unzipped.pipe(xmlNodes('Via')).pipe(xmlObjects()).on('data',  (data) => {
                         debug('Via', data.Via)
                         var viaPoint = data.Via.$
                         viaPoint.refType = 'Via'
                         collection.insert(viaPoint)
                      })
-                     unzipped.pipe(xmlNodes('TocRef')).pipe(xmlObjects()).on('data', function (data) {
+                     unzipped.pipe(xmlNodes('TocRef')).pipe(xmlObjects()).on('data',  (data) => {
                         //debug('TocRef', data.Via)
                         var tocRecord = data.TocRef.$
                         tocRecord.refType = 'TocRef'
                         collection.insert(tocRecord)
                      })
-                     unzipped.pipe(xmlNodes('LateRunningReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data', function (data) {
+                     unzipped.pipe(xmlNodes('LateRunningReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data',  (data) => {
                         //debug('LateRunningReason', data.Reason)
                         var lateReason = data.Reason.$
                         lateReason.refType = 'LateRunningReason'
                         collection.update({'refType':'LateRunningReason', code: lateReason.code}, lateReason, { upsert: true})
                      })
-                     unzipped.pipe(xmlNodes('CancellationReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data', function (data) {
+                     unzipped.pipe(xmlNodes('CancellationReasons')).pipe(xmlNodes('Reason')).pipe(xmlObjects()).on('data', (data) => {
                         //debug('CancellationReason', data.Reason)
                         var cancelledReason = data.Reason.$
                         cancelledReason.refType = 'LateRunningReason'
@@ -664,15 +664,15 @@ function importDarwinSchedule( db, cb ) {
    var c = new ftpClient();
    var gzip = zlib.createGunzip()
    db.collection('DSCHEDULE', function (err, collection) {
-      c.on('ready', function() {
-         c.list('.', function (err, list) {
-            list.forEach( function ( file ) {
+      c.on('ready', () => {
+         c.list('.',  (err, list) => {
+            list.forEach(  ( file ) => {
                if (file.name.match(/_v8.xml.gz$/) != null)
                {
                   debug('importDarwinSchedule', "retrieve " + file.name)
-                  c.get(file.name, function(err, stream) {
+                  c.get(file.name, (err, stream) => {
                      if (err) throw err;
-                     stream.once('close', function() { c.end(); });
+                     stream.once('close', () => { c.end(); });
                      var unzipped = stream.pipe(gzip)
                      unzipped.pipe(xmlNodes('Journey')).pipe(xmlObjects({explicitChildren:true, preserveChildrenOrder: true})).on('data', function (data) {
                         debug('Journey',data.Journey)
