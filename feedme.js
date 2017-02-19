@@ -17,8 +17,6 @@ const Parser = require("stream-json/Parser");
 const Streamer = require("stream-json/Streamer");
 const Assembler = require("stream-json/utils/Assembler");
 
-const MongoClient = require('mongodb').MongoClient;
-
 var numMessages = 0;
 var numMessagesSinceLast = 0;
 var numTDMessages = 0;
