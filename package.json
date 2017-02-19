@@ -22,6 +22,7 @@
     "ftp": "^0.3.10",
     "moment": "*",
     "mongodb": "*",
+    "onboot": "^1.0.0",
     "request": "*",
     "restify": "^4.3.0",
     "statware": "^1.1.3",

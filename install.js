@@ -7,12 +7,15 @@ const JSONStream = require('JSONStream')
 const csv = require('csv-stream')
 const es = require('event-stream')
 const request = require('request')
-const sftpClient = require('ftp');
+const ftpClient = require('ftp');
 const xmlNodes = require('xml-nodes');
 const xmlObjects = require('xml-objects');
 var log = bunyan.createLogger({
-    name: 'nrod-installer'
+    name: 'nrod-installer',
+    stream: process.stdout,
+    level: "debug"
 });
+const boot = require('onboot');
 
 // Retrieve
 const MongoClient = require('mongodb').MongoClient;
@@ -26,30 +29,48 @@ function main() {
             log.fatal("Error: " + err)
             return
         }
+        boot.strap((done) => {
+            var referenceDataFilename = '20140116_ReferenceData.gz'
+            log.info("Importing reference data from " + referenceDataFilename)
+            importReferenceData(db, referenceDataFilename, () => {
+                log.info("Reference Data imported")
+                done()
+            })
+        })
 
-        var referenceDataFilename = '20140116_ReferenceData.gz'
-        log.info("Initialising datasets")
-        log.info("Importing reference data from " + referenceDataFilename)
-        importReferenceData(db, referenceDataFilename, () => {
-            log.info("Reference Data imported")
+        boot.strap((done) => {
             importSMART(db, () => {
                 log.info("SMART data imported")
-                importCORPUS(db, () => {
-                    log.info("CORPUS data imported")
-                    log.info("Importing initial (full) SCHEDULE data")
-                    importSchedule(db, {
-                        update: false
-                    }, () => {
-                        log.info("Schedule data imported!")
-                        importDarwinReference(db, () => {
-                            log.info("Darwin Reference data imported!")
-                            importDarwinSchedule(db, () => {
-                                log.info("Darwin Schedule data imported!")
-                                db.close()
-                                process.exit()
-                            })
-                        })
-                    })
+                done()
+            })
+        })
+
+        boot.strap((done) => {
+            importCORPUS(db, () => {
+                log.info("CORPUS data imported")
+                log.info("Importing initial (full) SCHEDULE data")
+                done()
+            })
+        })
+
+        boot.strap((done) => {
+            importSchedule(db, {
+                update: false
+            }, () => {
+                log.info("Schedule imported")
+                done()
+            })
+        })
+
+
+        boot.up((done) => {
+            importDarwinReference(db, () => {
+                log.info("Darwin Reference data imported!")
+                importDarwinSchedule(db, () => {
+                    log.info("Darwin Schedule data imported!")
+                    log.info('install complete')
+                    db.close()
+                    process.exit()
                 })
             })
         })
@@ -103,42 +124,33 @@ function importSMART(db, cb) {
         var rows = 0
 
         db.collection('SMART', (err, collection) => {
-            collection.ensureIndex({
+            collection.createIndexes({
                 'FROMBERTH': 1,
                 'TOBERTH': 1
             }, {}, () => {
-                log.info("Index created")
+                log.info("Index created on SMART collection")
             })
-            var documents = []
             dataStream.pipe(gzip).pipe(jstream).pipe(es.mapSync((data) => {
                 rows++
                 data.type = 'SMART'
                 //log.info(data)
-                documents.push(data)
-                //				log.debug('insertDocuments','documents.length',documents.length )
-                if (documents.length >= 500) {
-                    log.debug('insertDocuments', 'inserting batch of documents', documents.length)
-                    collection.insert(documents, {
-                        w: 1
-                    }, (err, records) => {
+                collection.update({
+                        type: 'SMART',
+                        'FROMBERTH': data.FROMBERTH,
+                        'TOBERTH': data.TOBERTH
+                    },
+                    data, {
+                        w: 1,
+                        upsert: true
+                    },
+                    (err, result) => {
                         if (err) {
                             log.error(err)
                         }
-                        log.debug('insertDocuments', 'inserted', records.length, 'records')
-                        //anno(Object.keys(records))
                     })
-                    documents = []
-                }
-            })).on('end', function() {
-                collection.insert(documents, {
-                    w: 1
-                }, (err, records) => {
-                    if (err) {
-                        log.error(err)
-                    }
-                    log.debug('insertDocumentsFinally', records.length)
-                    anno(rows)
-                    cb();
+            })).on('error', (error) => {
+                log.error({
+                    "referenceInsertError": error
                 })
             })
         })
@@ -147,6 +159,8 @@ function importSMART(db, cb) {
 
 function importCORPUS(db, cb) {
     log.debug('importCORPUS')
+    var insertedCount = 0
+    var progress = 0
     var fs = require('fs')
     var gzip = zlib.createGunzip()
     var jstream = JSONStream.parse("TIPLOCDATA.*")
@@ -168,38 +182,40 @@ function importCORPUS(db, cb) {
         }
 
         db.collection('CORPUS', (err, collection) => {
-            var rows = 0
-            var documents = []
-            collection.ensureIndex({
-                'STANOX': 1
-            }, {}, () => {
-                log.info("Indexed on STANOX")
-            })
-            var dataStream = request({
-                uri: dataURI,
-                method: "GET",
-                gzip: true,
-                followRedirect: false
-            }).pipe(gzip)
+            collection.remove({}, {}, () => {
+                log.info('CORPUS purged')
+                collection.ensureIndex({
+                    'STANOX': 1
+                }, {}, () => {
+                    log.info("CORPUS Indexed on STANOX")
+                })
+                var dataStream = request({
+                    uri: dataURI,
+                    method: "GET",
+                    gzip: true,
+                    followRedirect: false
+                }).pipe(gzip)
 
-            dataStream.pipe(jstream).pipe(es.mapSync((doc) => {
-                rows++
-                doc.type = 'CORPUS'
-                documents.push(doc)
-                if (documents.length >= 500) {
-                    log.debug('insertDocuments', 'inserting batch of CORPUS records', documents.length)
-                    collection.insert(documents, (error, records) => {
-                        anno(records.length)
+                dataStream.pipe(jstream).pipe(es.mapSync((doc) => {
+                    dataStream.pause()
+                    doc.type = 'CORPUS'
+                    collection.insertOne(doc, {}, (error, result) => {
+                        dataStream.resume()
+                        if (progress > 1000) {
+                            progress = 0
+                            log.info({
+                                'type': 'CORPUS',
+                                'insertedCount': insertedCount
+                            })
+                        }
+                        insertedCount += 1
+                        progress += 1
                     })
-                    documents = []
-                }
-            })).on('end', () => {
-                collection.insert(documents, {
-                    w: 1
-                }, (err, records) => {
-                    anno(records.length)
-                    log.info("Completed inserting " + rows + " CORPUS rows")
-                    cb();
+                })).on('error', (pipeErr) => {
+                    log.error("Error in CORPUS stream", pipeErr)
+                }).on('end', () => {
+                    log.info("CORPUS import complete")
+                    cb()
                 })
             })
         })
@@ -209,170 +225,225 @@ function importCORPUS(db, cb) {
 function importReferenceData(db, filename, cb) {
     log.debug('importReferenceData')
     db.collection('REFERENCE', (err, collection) => {
-        collection.ensureIndex({
-            'TIPLOC': 1,
-            'refType': 1
-        }, {}, () => {
-            log.info("Indexed on TIPLOC")
-        })
-        var fs = require('fs')
-        var gzip = zlib.createGunzip()
-        var filein = fs.createReadStream(filename)
-        var options = {
-            delimiter: "\t",
-            endLine: "\n",
-            columns: ['recordType',
-                'field1',
-                'field2',
-                'field3',
-                'field4',
-                'field5',
-                'field6',
-                'field7',
-                'field8',
-                'field9',
-                'field10',
-                'field11',
-                'field12',
-                'field13',
-                'field14',
-                'field15',
-                'field16',
-                'field17',
-                'field18',
-                'field18',
-                'field20'
-            ]
-        }
-        var tsvStream = csv.createStream(options)
+        collection.remove({}, {}, () => { // delete the entire contents first, then repopulate it
+            log.info('reference collection purged')
+            collection.ensureIndex({
+                'TIPLOC': 1,
+                'refType': 1
+            }, {}, () => {
+                log.info("Indexed on TIPLOC")
+            })
+            var fs = require('fs')
+            var gzip = zlib.createGunzip()
+            var filein = fs.createReadStream(filename)
+            var options = {
+                delimiter: "\t",
+                endLine: "\n",
+                columns: ['recordType',
+                    'field1',
+                    'field2',
+                    'field3',
+                    'field4',
+                    'field5',
+                    'field6',
+                    'field7',
+                    'field8',
+                    'field9',
+                    'field10',
+                    'field11',
+                    'field12',
+                    'field13',
+                    'field14',
+                    'field15',
+                    'field16',
+                    'field17',
+                    'field18',
+                    'field18',
+                    'field20'
+                ]
+            }
+            var tsvStream = csv.createStream(options)
 
-        var rows = 0
-        var insertedRows = 0
-        var documents = []
-        tsvStream.on('data', (data) => {
-            rows++
-            var record = data
-            var doc = {}
-            doc.type = 'REFERENCE'
-            switch (record.recordType) {
-                case 'PIF':
-                    doc.refType = 'InterfaceSpecification'
-                    doc.fileVersion = record['field1']
-                    doc.sourceSystem = record['field2']
-                    doc.TOCid = record['field3']
-                    doc.timetableStartDate = record['field4']
-                    doc.timetableEndDate = record['field5']
-                    doc.cylcleType = record['field6']
-                    doc.cycleStage = record['field7']
-                    doc.creationDate = record['field8']
-                    doc.fileSequenceNumber = record['field9']
-                    break;
-                case 'REF':
-                    doc.refType = 'ReferenceCode'
-                    doc.actionCode = record['field1']
-                    doc.referenceCodeType = record['field2']
-                    doc.description = record['field3']
-                    break;
-                case 'TLD':
-                    doc.refType = 'TimingLoad'
-                    doc.actionCode = record['field1']
-                    doc.tractionType = record['field2']
-                    doc.trailingLoad = record['field3']
-                    doc.speed = record['field4']
-                    doc.raGauge = record['field5']
-                    doc.description = record['field6']
-                    doc.ITPSPowerType = record['field7']
-                    doc.ITPSLoad = record['field8']
-                    doc.limitingSpeed = record['field9']
-                    break;
-                case 'LOC':
-                    doc.refType = 'GeographicData'
-                    doc.actionCode = record['field1']
-                    doc.TIPLOC = record['field2']
-                    doc.locationName = record['field3']
-                    doc.startDate = record['field4']
-                    doc.endDate = record['field5']
-                    doc.northing = record['field6']
-                    doc.easting = record['field7']
-                    doc.timingPointType = record['field8']
-                    doc.zone = record['field9']
-                    doc.STANOXcode = record['field10']
-                    doc.offNetworkIndicator = record['field11']
-                    doc.forceLPB = record['field12']
-                    break;
-                case 'PLT':
-                    doc.refType = 'Platform'
-                    doc.actionCode = record['field1']
-                    doc.locationCode = record['field2']
-                    doc.platformID = record['field3']
-                    doc.startDate = record['field4']
-                    doc.endDate = record['field5']
-                    doc.length = record['field6']
-                    doc.powerSupplyType = record['field7']
-                    doc.DDOPassenger = record['field8']
-                    doc.DDONonPassenger = record['field9']
-                    break;
-                case 'NWK':
-                    doc.refType = 'NetworkLink'
-                    doc.actioncode = record['field1']
-                    doc.originLocation = record['field2']
-                    doc.destinationLocation = record['field3']
-                    doc.runningLineCode = record['field4']
-                    doc.runningLineDescription = record['field5']
-                    doc.startDate = record['field6']
-                    doc.endDate = record['field7']
-                    doc.initialDirection = record['field8']
-                    doc.finalDirection = record['field9']
-                    doc.DDOPassenger = record['field10']
-                    doc.DDONonPassenger = record['field11']
-                    doc.RETB = record['field12']
-                    doc.zone = record['field13']
-                    doc.reversible = record['field14']
-                    doc.powerSupplyType = record['field15']
-                    doc.RA = record['field16']
-                    doc.maxTrainLength = record['field17']
-                    break;
-                case 'TLK':
-                    doc.refType = 'TimingLink'
-                    doc.actionCode = record['field1']
-                    doc.originLocation = record['field2']
-                    doc.destinationLocation = record['field3']
-                    doc.runningLineCode = record['field4']
-                    doc.tractionType = record['field5']
-                    doc.trailingLoad = record['field6']
-                    doc.speed = record['field7']
-                    doc.RAGague = record['field8']
-                    doc.entrySpeed = record['field9']
-                    doc.exitSpeed = record['field10']
-                    doc.startDate = record['field11']
-                    doc.endDate = record['field12']
-                    doc.sectionalRunningTime = record['field13']
-                    doc.description = record['field14']
-                    break;
-                default:
-                    doc = {}
-            }
-            documents.push(doc)
-            //log.debug('loadDocuments')
-            if (documents.length >= 1000) {
-                //log.debug('insertDocuments', documents.length)
-                collection.insert(documents, (error, records) => {
-                    insertedRows += records.length
-                    log.info(insertedRows + " REFERENCE records inserted")
+            var rows = 0
+            var insertedRows = 0
+            var progress = 0
+            var documents = []
+            tsvStream.on('data', (data) => {
+                tsvStream.pause()
+                rows++
+                var record = data
+                var doc = {}
+                doc.type = 'REFERENCE'
+
+                switch (record.recordType) {
+                    case 'PIF':
+                        doc.refType = 'InterfaceSpecification'
+                        doc.fileVersion = record['field1']
+                        doc.sourceSystem = record['field2']
+                        doc.TOCid = record['field3']
+                        doc.timetableStartDate = record['field4']
+                        doc.timetableEndDate = record['field5']
+                        doc.cylcleType = record['field6']
+                        doc.cycleStage = record['field7']
+                        doc.creationDate = record['field8']
+                        doc.fileSequenceNumber = record['field9']
+                        collection.insertOne(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'REF':
+                        doc.refType = 'ReferenceCode'
+                        doc.actionCode = record['field1']
+                        doc.referenceCodeType = record['field2']
+                        doc.description = record['field3']
+                        collection.insert(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'TLD':
+                        doc.refType = 'TimingLoad'
+                        doc.actionCode = record['field1']
+                        doc.tractionType = record['field2']
+                        doc.trailingLoad = record['field3']
+                        doc.speed = record['field4']
+                        doc.raGauge = record['field5']
+                        doc.description = record['field6']
+                        doc.ITPSPowerType = record['field7']
+                        doc.ITPSLoad = record['field8']
+                        doc.limitingSpeed = record['field9']
+                        collection.insertOne(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'LOC':
+                        doc.refType = 'GeographicData'
+                        doc.actionCode = record['field1']
+                        doc.TIPLOC = record['field2']
+                        doc.locationName = record['field3']
+                        doc.startDate = record['field4']
+                        doc.endDate = record['field5']
+                        doc.northing = record['field6']
+                        doc.easting = record['field7']
+                        doc.timingPointType = record['field8']
+                        doc.zone = record['field9']
+                        doc.STANOXcode = record['field10']
+                        doc.offNetworkIndicator = record['field11']
+                        doc.forceLPB = record['field12']
+                        collection.insert(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'PLT':
+                        doc.refType = 'Platform'
+                        doc.actionCode = record['field1']
+                        doc.locationCode = record['field2']
+                        doc.platformID = record['field3']
+                        doc.startDate = record['field4']
+                        doc.endDate = record['field5']
+                        doc.length = record['field6']
+                        doc.powerSupplyType = record['field7']
+                        doc.DDOPassenger = record['field8']
+                        doc.DDONonPassenger = record['field9']
+                        collection.insertOne(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'NWK':
+                        doc.refType = 'NetworkLink'
+                        doc.actioncode = record['field1']
+                        doc.originLocation = record['field2']
+                        doc.destinationLocation = record['field3']
+                        doc.runningLineCode = record['field4']
+                        doc.runningLineDescription = record['field5']
+                        doc.startDate = record['field6']
+                        doc.endDate = record['field7']
+                        doc.initialDirection = record['field8']
+                        doc.finalDirection = record['field9']
+                        doc.DDOPassenger = record['field10']
+                        doc.DDONonPassenger = record['field11']
+                        doc.RETB = record['field12']
+                        doc.zone = record['field13']
+                        doc.reversible = record['field14']
+                        doc.powerSupplyType = record['field15']
+                        doc.RA = record['field16']
+                        doc.maxTrainLength = record['field17']
+                        collection.insert(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                    case 'TLK':
+                        doc.refType = 'TimingLink'
+                        doc.actionCode = record['field1']
+                        doc.originLocation = record['field2']
+                        doc.destinationLocation = record['field3']
+                        doc.runningLineCode = record['field4']
+                        doc.tractionType = record['field5']
+                        doc.trailingLoad = record['field6']
+                        doc.speed = record['field7']
+                        doc.RAGague = record['field8']
+                        doc.entrySpeed = record['field9']
+                        doc.exitSpeed = record['field10']
+                        doc.startDate = record['field11']
+                        doc.endDate = record['field12']
+                        doc.sectionalRunningTime = record['field13']
+                        doc.description = record['field14']
+                        collection.insert(doc, {}, (error, result) => {
+                            if (error) {
+                                log.error(error)
+                            }
+                            insertedRows += 1
+                            progress += 1
+                            tsvStream.resume()
+                        })
+                        break;
+                }
+                if (progress > 1000) {
+                    progress = 0
+                    log.info({
+                        'referenceRows': insertedRows
+                    })
+                }
+            }).on('error', (pipeErr) => {
+                log.error("Error in REFERENCE stream", pipeErr)
+            })
+            filein.pipe(gzip).pipe(tsvStream).on('end', () => {
+                log.info({
+                    'completed': true,
+                    'referenceRows': insertedRows
                 })
-                documents = []
-            }
-        })
-        tsvStream.on('end', () => {
-            log.info("Inserting last REFERENCE documents")
-            collection.insert(documents, (error, records) => {
-                insertedRows += records.length
-                log.info(insertedRows + " records inserted")
-                log.info("Processed " + rows + " rows")
                 cb()
             })
         })
-        filein.pipe(gzip).pipe(tsvStream)
     })
 }
 
@@ -388,7 +459,7 @@ function importSchedule(db, options, cb) {
         getUrl = "https://datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_UPDATE_DAILY&day=toc-update-" + dayOfWeek
     }
     var recordsParsed = 0
-    log.info("Fetching " + getUrl)
+    log.info('scheduleImport', "Fetching " + getUrl)
     request({
         uri: getUrl,
         method: "GET",
@@ -425,16 +496,44 @@ function importSchedule(db, options, cb) {
 
         function callbackWhenAllDone() {
             if (schedDone && assocDone && tiplocDone) {
-                if (options['update'] == true) {
-                    log.info("Completed processing file: ")
-                    log.info(scheduleItems + " schedules inserted, " + schedulesDeleted + " deleted")
-                    log.info(associationItems + " assications inserted, " + associationDeleted + " deleted")
-                    log.info(tiplocItems + " tiploc items inserted, " + tiplocDeleted + " items deleted")
-                } else {
-                    log.info("Completed processing file: " + scheduleItems + " schedules, " + associationItems + " associations, " + tiplocItems + " tiploc items")
-                }
+                log.info({
+                    'status': 'completed',
+                    schedule: {
+                        inserted: insertedScheduleRecords,
+                        deleted: schedulesDeleted,
+                    },
+                    assoc: {
+                        inserted: associationItems,
+                        deleted: associationDeleted
+                    },
+                    tiploc: {
+                        inserted: tiplocItems,
+                        deleted: tiplocDeleted
+                    }
+                })
                 cb()
+            } else {
+                log.debug("not everything is done")
             }
+        }
+        var insertedScheduleRecords = 0
+
+        function insertScheduleRecords(collection, scheduleInserts) {
+            collection.insertMany(scheduleInserts, {
+                w: 1
+            }, (error, result) => {
+                if (error) {
+                    log.debug('inserts', error)
+                    log.info(error)
+                }
+                insertedScheduleRecords += result.insertedCount
+                log.info({
+                    'status': 'in_progress',
+                    'schedule': {
+                        inserted: insertedScheduleRecords
+                    }
+                })
+            })
         }
 
         db.collection('SCHEDULE', (err, collection) => {
@@ -444,7 +543,7 @@ function importSchedule(db, options, cb) {
                 log.info("SCHEDULE indexed on CIF_train_uid")
             })
             var scheduleInserts = []
-            var insertedScheduleRecords = 0
+
             dataStream.pipe(scheduleJsonStream).pipe(es.mapSync((data) => {
                 scheduleItems++
                 var txType = data['transaction_type']
@@ -462,45 +561,30 @@ function importSchedule(db, options, cb) {
                         break;
                 }
                 if (scheduleInserts.length >= 500) {
-                    collection.insert(scheduleInserts, {
-                        w: 1
-                    }, (error, records) => {
-                        if (error) {
-                            log.debug('inserts', error)
-                            log.info(error)
-                        }
-                        //log.debug('scheduleInserts', records, error)
-                        if (records != null){
-                           insertedScheduleRecords += records.length
-                        }
-                        log.info("Inserted " + insertedScheduleRecords + " SCHEDULE records")
-                    })
+                    insertScheduleRecords(collection, scheduleInserts)
                     scheduleInserts = []
                 }
             })).on('end', function() {
                 if (scheduleInserts.length >= 1) {
                     log.info("Inserting last Schedules")
-                    collection.insert(scheduleInserts, {
-                        w: 1
-                    }, (error, records) => {
-                        if (records != null) {
-                            insertedScheduleRecords += records.length
-                            log.info("Inserted " + insertedScheduleRecords + " SCHEDULE records")
-                        }
-                        schedDone = true
-                        callbackWhenAllDone()
-                    })
-                } else {
-                    schedDone = true
-                    callbackWhenAllDone()
+                    insertScheduleRecords(collection, scheduleInserts)
                 }
+                schedDone = true
+                callbackWhenAllDone()
+            }).on('error', (pipeErr) => {
+                log.error("Error in SCHEDULE stream", pipeErr)
             })
         })
 
+
+
         db.collection('ASSOCIATION', (err, collection) => {
+            if (err) {
+                log.error(err)
+            }
             var assocInserts = []
             var insertedAssocRecords = 0
-            collection.ensureIndex({
+            collection.createIndexes({
                 'main_train_uid': 1
             }, () => {
                 log.info("ASSOCIATION indexed on main_train_uid")
@@ -523,15 +607,20 @@ function importSchedule(db, options, cb) {
                         break;
                 }
                 if (assocInserts.length >= 1000) {
-                    collection.insert(assocInserts, {
+                    collection.insertMany(assocInserts, {
                         w: 1
-                    }, (error, records) => {
-                       if (records != null)
-                       {
-                          insertedAssocRecords += records.length
-                       }
+                    }, (error, result) => {
+                        if (records != null) {
+                            insertedAssocRecords += result.insertedCount
+                        }
 
-                        log.info("Inserted " + insertedAssocRecords + " ASSOCIATION records")
+                        log.info({
+                            'status': 'in_progress',
+                            'assoc': {
+                                inserted: insertedAssocRecords,
+                                deleted: associationDeleted
+                            }
+                        })
                     })
                     assocInserts = []
                 }
@@ -540,12 +629,18 @@ function importSchedule(db, options, cb) {
                 if (assocInserts.length >= 1) {
                     collection.insert(assocInserts, {
                         w: 1
-                    }, (error, records) => {
+                    }, (error, result) => {
                         if (error) {
                             log.error(error)
                         }
-                        insertedAssocRecords += records.length
-                        log.info("Inserted " + insertedAssocRecords + " ASSOCIATION records")
+                        insertedAssocRecords += result.insertedCount
+                        log.info({
+                            'status': 'in_progress',
+                            'assoc': {
+                                inserted: insertedAssocRecords,
+                                deleted: associationDeleted
+                            }
+                        })
                         assocDone = true
                         callbackWhenAllDone()
                     })
@@ -553,6 +648,8 @@ function importSchedule(db, options, cb) {
                     assocDone = true
                     callbackWhenAllDone()
                 }
+            }).on('error', (pipeErr) => {
+                log.error("Error in ASSOCIATION stream", pipeErr)
             })
         })
 
@@ -586,12 +683,18 @@ function importSchedule(db, options, cb) {
                 if (tiplocInserts.length >= 1000) {
                     collection.insert(tiplocInserts, {
                         w: 1
-                    }, (error, records) => {
+                    }, (error, result) => {
                         if (error) {
                             log.error(error)
                         }
-                        insertedTiplocRows += records.length
-                        log.info("Inserted " + insertedTiplocRows + " TIPLOC records")
+                        insertedTiplocRows += result.insertedCount
+                        log.info({
+                            'status': 'in_progress',
+                            'tiploc': {
+                                inserted: insertedTiplocRows,
+                                deleted: tiplocDeleted
+                            }
+                        })
                     })
                     tiplocInserts = []
                 }
@@ -600,12 +703,18 @@ function importSchedule(db, options, cb) {
                 if (tiplocInserts.length >= 1) {
                     collection.insert(tiplocInserts, {
                         w: 1
-                    }, (error, records) => {
+                    }, (error, result) => {
                         if (error) {
                             log.error(error)
                         }
-                        insertedTiplocRows += records.length
-                        log.info("Inserted " + insertedTiplocRows + " TIPLOC records")
+                        insertedTiplocRows += result.insertedCount
+                        log.info({
+                            'status': 'in_progress',
+                            'tiploc': {
+                                inserted: insertedTiplocRows,
+                                deleted: tiplocDeleted
+                            }
+                        })
                         tiplocDone = true
                         callbackWhenAllDone()
                     })
@@ -613,6 +722,8 @@ function importSchedule(db, options, cb) {
                     tiplocDone = true
                     callbackWhenAllDone()
                 }
+            }).on('error', (pipeErr) => {
+                log.error("Error in TIPLOC stream", pipeErr)
             })
         })
     })
